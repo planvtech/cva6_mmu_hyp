@@ -1054,7 +1054,7 @@ package ariane_pkg;
     endfunction : make_gpaddr
 
      // computes the final gppn based on the guest physical address
-    function automatic logic [(riscv::GPPNW-1):0] make_gppn(input logic s_st_enbl, input logic is_2M, input logic is_1G, input logic [28:0] vpn, input riscv::pte_t pte);
+    function automatic logic [(riscv::GPPNW-1):0] make_gppn(input logic s_st_enbl, input logic is_1G, input logic is_2M, input logic [28:0] vpn, input riscv::pte_t pte);
         logic [(riscv::GPPNW-1):0] gppn;
         if (s_st_enbl) begin
             gppn = pte.ppn[(riscv::GPPNW-1):0];
