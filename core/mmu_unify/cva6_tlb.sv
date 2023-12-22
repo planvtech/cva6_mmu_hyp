@@ -101,9 +101,9 @@
 
           for (x=0; x < PT_LEVELS; x++) begin  
               //identify page_match for all TLB Entries  
-              assign page_match[i][x] = x==0 ? 1 :(HYP_EXT==1 && x!=(PT_LEVELS-1)? //
-                                                ((&v_st_enbl_i[HYP_EXT:0]) ? 
-                                                ((tags_q[i].is_page[PT_LEVELS-1-x][0] && (tags_q[i].is_page[PT_LEVELS-2-x][1] || tags_q[i].is_page[PT_LEVELS-1-x][1])) //
+              assign page_match[i][x] = x==0 ? 1 :(HYP_EXT==1 && x!=(PT_LEVELS-1)? // PAGE_MATCH CONTAINS THE MATCH INFORMATION FOR EACH TAG OF is_1G and is_2M in sv39x4. HIGHER LEVEL (Giga page), THEN THERE IS THE Mega page AND AT THE LOWER LEVEL IS ALWAYS 1
+                                                ((&v_st_enbl_i[HYP_EXT:0]) ? // THIS WILL NEED TO BE OPTIMIZED ONCE WE MAKE IT WORK. INDEX 1 DOES NOT EXIST IN SV32.
+                                                ((tags_q[i].is_page[PT_LEVELS-1-x][0] && (tags_q[i].is_page[PT_LEVELS-2-x][1] || tags_q[i].is_page[PT_LEVELS-1-x][1])) // THE MIDDLE PART CORRESPONDS TO THE is_trans_2M FUNCTION
                                               || (tags_q[i].is_page[PT_LEVELS-1-x][1] && (tags_q[i].is_page[PT_LEVELS-2-x][0] || tags_q[i].is_page[PT_LEVELS-1-x][0]))):
                                                   tags_q[i].is_page[PT_LEVELS-1-x][0] && v_st_enbl_i[0] || tags_q[i].is_page[PT_LEVELS-1-x][1] && v_st_enbl_i[1]):
                                                   &(tags_q[i].is_page[PT_LEVELS-1-x] | (~v_st_enbl_i[HYP_EXT:0])));
@@ -118,16 +118,16 @@
                                               vaddr_to_be_flushed_i[0][12+((VPN_LEN/PT_LEVELS)*(x+1))-1:12+((VPN_LEN/PT_LEVELS)*x)] == tags_q[i].vpn[x] && vaddr_to_be_flushed_i[0][VPN_LEN-1: VPN_LEN-VPN_LEN%PT_LEVELS] == tags_q[i].vpn[x+1][VPN_LEN%PT_LEVELS-1:0]: //  
                                               vaddr_to_be_flushed_i[0][12+((VPN_LEN/PT_LEVELS)*(x+1))-1:12+((VPN_LEN/PT_LEVELS)*x)] == tags_q[i].vpn[x];
               //identify if there is a hit at each PT level for all TLB entries  
-              assign vaddr_level_match[i][x]= &vaddr_vpn_match[i][PT_LEVELS-1:x] & page_match[i][x];
+              assign vaddr_level_match[i][x]= &vaddr_vpn_match[i][PT_LEVELS-1:x] & page_match[i][x]; // THIS IS NOT USED RIGHT NOW AND WILL NEED TO BE CHANGED TO USE THE CORRECT PAGES ONCE WE MAKE IT WORK
               //update vpn field in tags_n for each TLB when the update is valid and the tag needs to be replaced
               assign tags_n[i].vpn[x]       = ((~(|flush_i)) && update_i.valid && replace_en[i]) ? update_i.vpn[(1+x)*(VPN_LEN/PT_LEVELS)-1:x*(VPN_LEN/PT_LEVELS)] : tags_q[i].vpn[x];
           end
 
           for (w=0; w < PT_LEVELS - 1; w++) begin  
-            assign is_page_o[i][w] = page_match[i][PT_LEVELS - 1 - w];
+            assign is_page_o[i][w] = page_match[i][PT_LEVELS - 1 - w]; //THIS REORGANIZES THE PAGES TO MATCH THE OUTPUT STRUCTURE (2M,1G)
           end
 
-          if(HYP_EXT==1) begin
+          if(HYP_EXT==1) begin //THIS UPDATES THE EXTRA BITS OF VPN IN SV39x4
               assign tags_n[i].vpn[PT_LEVELS][(VPN_LEN%PT_LEVELS)-1:0] =((~(|flush_i)) && update_i.valid && replace_en[i]) ? update_i.vpn[VPN_LEN-1: VPN_LEN-(VPN_LEN%PT_LEVELS)] : tags_q[i].vpn[PT_LEVELS][(VPN_LEN%PT_LEVELS)-1:0];         
           end
 
@@ -239,6 +239,7 @@
             tags_n[i].valid = 1'b0;
           // flush vaddr in all addressing space ("SFENCE.VMA vaddr x0" case), it should happen only for leaf pages
           else if (asid_to_be_flushed_is0[0] && ((vaddr_vpn_match[i][0] && vaddr_vpn_match[i][1] && vaddr_vpn_match[i][2]) || (vaddr_vpn_match[i][2] && tags_q[i].is_page[0][0]) || (vaddr_vpn_match[i][1] && vaddr_vpn_match[i][2] && tags_q[i].is_page[1][0])) && (~vaddr_to_be_flushed_is0[0]))
+            // ALL THESE CHECKS WILL NEED TO BE REDUCED TO SOMETHING LIKE BELOW WHEN ALL IS FIXED AND VADDR_LEVEL_MATCH IS CORRECTED WITH THE APPLICABLE PAGES. THIS WONT WORK FOR SV32 BECAUSE MANY INDEXES WILL NOT EXIST
             // else if (asid_to_be_flushed_is0[0] && (|vaddr_level_match[i]) && (~vaddr_to_be_flushed_is0[0]))
             tags_n[i].valid = 1'b0;
           // the entry is flushed if it's not global and asid and vaddr both matches with the entry to be flushed ("SFENCE.VMA vaddr asid" case)
@@ -267,7 +268,7 @@
               else if ((~content_q[i][0].g) && (vaddr_to_be_flushed_is0[0]) && (asid_to_be_flushed_i[0][ASID_WIDTH[0]-1:0] == tags_q[i].asid[0][ASID_WIDTH[0]-1:0] && asid_match[i][1]) && (~asid_to_be_flushed_is0[0]))
                   tags_n[i].valid = 1'b0;
           end
-      end else if (HYP_EXT==1 && flush_i[HYP_EXT*2]) begin
+      end else if (HYP_EXT==1 && flush_i[HYP_EXT*2]) begin //I HAVE A FEELING THAT THE PROBLEM IS AROUND HERE BECAUSE I DO NOT SEE MANY OF THESE SIGNALS IN THE SYNTHESIS i.e. IT IS AS IF THE SYNTHESIZER DECIDED THIS IS NOT NECESSARY BECAUSE SOME FLAG OR ENABLE IS ALWAYS FIXED, OR BECAUSE THE CHECKS TRHOW ALWAYS THE SAME RESULTS, BUT I DONT KNOW WHICH ONE
           if(tags_q[i].v_st_enbl[HYP_EXT]) begin
               // invalidate logic
               // flush everything if vmid is 0 and addr is 0 ("HFENCE.GVMA x0 x0" case)
