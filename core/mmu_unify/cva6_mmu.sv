@@ -95,9 +95,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     localparam PT_LEVELS     = (riscv::XLEN == 64) ? 3  : 2;
     localparam int unsigned mmu_ASID_WIDTH [HYP_EXT:0] = {VMID_WIDTH,ASID_WIDTH};
 
-    
-
-        // memory management, pte for cva6
+    // memory management, pte for cva6
     localparam type pte_cva6_t = struct packed {
     // typedef struct packed {
       logic [riscv::PPNW-1:0] ppn; // PPN length for
@@ -165,10 +163,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     logic [mmu_ASID_WIDTH[0]-1:0] itlb_mmu_asid_i [HYP_EXT:0];
     logic [mmu_ASID_WIDTH[0]-1:0] mmu_asid_to_be_flushed_i [HYP_EXT:0];
     logic [riscv::VLEN-1:0] mmu_vaddr_to_be_flushed_i [HYP_EXT:0];
-    logic [2:0] mmu_flush_i,mmu_v_st_enbl_i;
-
-    
-
+    logic [2:0] mmu_flush_i,mmu_v_st_enbl_i,mmu_v_st_enbl_d;
 
 
     // Assignments
@@ -176,6 +171,16 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     assign dtlb_lu_access = lsu_req_i;
     assign itlb_lu_asid = v_i ? vs_asid_i : asid_i;
     assign dtlb_lu_asid = (ld_st_v_i || flush_tlb_vvma_i) ? vs_asid_i : asid_i;
+
+    assign mmu_flush_i[2] = flush_tlb_gvma_i;
+    assign mmu_flush_i[1] = flush_tlb_vvma_i;
+    assign mmu_flush_i[0] = flush_tlb_i;
+    assign mmu_v_st_enbl_i[2] =v_i;
+    assign mmu_v_st_enbl_i[1] =enable_g_translation_i;
+    assign mmu_v_st_enbl_i[0] =enable_translation_i;
+    assign mmu_v_st_enbl_d[2] =ld_st_v_i;
+    assign mmu_v_st_enbl_d[1] =en_ld_st_g_translation_i;
+    assign mmu_v_st_enbl_d[0] =en_ld_st_translation_i;
 
     assign dtlb_mmu_asid_i[0] = (mmu_ASID_WIDTH[0])'(dtlb_lu_asid);
     assign dtlb_mmu_asid_i[1] = (mmu_ASID_WIDTH[0])'(vmid_i);
@@ -185,12 +190,11 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     assign mmu_asid_to_be_flushed_i[1] =(mmu_ASID_WIDTH[0])'(vmid_to_be_flushed_i);
     assign mmu_vaddr_to_be_flushed_i[0] =(riscv::VLEN)'(vaddr_to_be_flushed_i);
     assign mmu_vaddr_to_be_flushed_i[1] =(riscv::VLEN)'(gpaddr_to_be_flushed_i);
-    assign mmu_flush_i[2] = flush_tlb_gvma_i;
-    assign mmu_flush_i[1] = flush_tlb_vvma_i;
-    assign mmu_flush_i[0] = flush_tlb_i;
-    assign mmu_v_st_enbl_i[2] =v_i;
-    assign mmu_v_st_enbl_i[1] =enable_g_translation_i;
-    assign mmu_v_st_enbl_i[0] =enable_translation_i;
+
+    assign itlb_is_2M = itlb_is_page[1];
+    assign itlb_is_1G = itlb_is_page[0];
+    assign dtlb_is_2M = dtlb_is_page[1];
+    assign dtlb_is_1G = dtlb_is_page[0];
 
     assign itlb_content.ppn = mmu_itlb_content[0].ppn;
     assign itlb_content.rsw = mmu_itlb_content[0].rsw;
@@ -235,7 +239,6 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     assign dtlb_g_content.w = mmu_dtlb_content[1].w;
     assign dtlb_g_content.r = mmu_dtlb_content[1].r;
     assign dtlb_g_content.v = mmu_dtlb_content[1].v;
-    
 
     assign update_itlb.valid = update_ptw_itlb.valid;
     assign update_itlb.is_page[0][0]=update_ptw_itlb.is_s_1G;
@@ -269,11 +272,6 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     assign update_itlb.content[1].r = update_ptw_itlb.g_content.r;
     assign update_itlb.content[1].v = update_ptw_itlb.g_content.v;
 
-    assign itlb_is_2M = itlb_is_page[1];
-    assign itlb_is_1G = itlb_is_page[0];
-    assign dtlb_is_2M = dtlb_is_page[1];
-    assign dtlb_is_1G = dtlb_is_page[0];
-
     assign update_dtlb.valid = update_ptw_dtlb.valid;
     assign update_dtlb.is_page[0][0]=update_ptw_dtlb.is_s_1G;
     assign update_dtlb.is_page[0][1]=update_ptw_dtlb.is_g_1G;
@@ -305,129 +303,100 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     assign update_dtlb.content[1].r = update_ptw_dtlb.g_content.r;
     assign update_dtlb.content[1].v = update_ptw_dtlb.g_content.v;
 
-    cva6_tlb #(
-        .CVA6Cfg    (ArianeCfg),
+    cva6_tlb2 #(
+        .pte_cva6_t(pte_cva6_t),
+        .tlb_update_cva6_t(tlb_update_cva6_t),
+        .TLB_ENTRIES      ( INSTR_TLB_ENTRIES          ),
         .HYP_EXT(HYP_EXT),
-        .TLB_ENTRIES(INSTR_TLB_ENTRIES),
         .ASID_WIDTH (mmu_ASID_WIDTH),
+        // .ASID_WIDTH       ( ASID_WIDTH                 ),
+        // .VMID_WIDTH       ( VMID_WIDTH                 )
         .ASID_LEN (ASID_LEN),
         .VPN_LEN(VPN_LEN),
-        .PT_LEVELS(PT_LEVELS),
-        .pte_cva6_t(pte_cva6_t),
-        .tlb_update_cva6_t(tlb_update_cva6_t)
+        .PT_LEVELS(PT_LEVELS)
     ) i_itlb (
-        .clk_i  (clk_i),
-        .rst_ni (rst_ni),
-        .flush_i(mmu_flush_i),
-    
-        .update_i(update_itlb),
-    
-        .lu_access_i          (itlb_lu_access),
-        .lu_asid_i            (itlb_mmu_asid_i),
+        .clk_i            ( clk_i                      ),
+        .rst_ni           ( rst_ni                     ),
+        // .flush_i          ( flush_tlb_i                ),
+        // .flush_vvma_i     ( flush_tlb_vvma_i           ),
+        // .flush_gvma_i     ( flush_tlb_gvma_i           ),
+        // .s_st_enbl_i      ( enable_translation_i       ),
+        // .g_st_enbl_i      ( enable_g_translation_i     ),
+        // .v_i              ( v_i                        ),
+        .flush_i          ( mmu_flush_i                ),
+        .v_st_enbl_i      ( mmu_v_st_enbl_i            ),
+
+        .update_i         ( update_itlb            ),
+        // .update_i         ( update_ptw_itlb            ),
+
+        .lu_access_i      ( itlb_lu_access             ),
+        .lu_asid_i        ( itlb_mmu_asid_i            ),
+        // .lu_asid_i        ( itlb_lu_asid               ),
+        // .lu_vmid_i        ( vmid_i                     ),
         .asid_to_be_flushed_i (mmu_asid_to_be_flushed_i),
+        // .asid_to_be_flushed_i  ( asid_to_be_flushed_i  ),
+        // .vmid_to_be_flushed_i  ( vmid_to_be_flushed_i  ),
         .vaddr_to_be_flushed_i(mmu_vaddr_to_be_flushed_i),
-        .lu_vaddr_i           (icache_areq_i.fetch_vaddr),
-        .lu_gpaddr_o          (itlb_gpaddr),
-        .lu_content_o         (mmu_itlb_content),
-    
-        .lu_is_page_o(itlb_is_page),
-        .lu_hit_o  (itlb_lu_hit),
-        .v_st_enbl_i(mmu_v_st_enbl_i)
+        // .vaddr_to_be_flushed_i ( vaddr_to_be_flushed_i ),
+        // .gpaddr_to_be_flushed_i( gpaddr_to_be_flushed_i),
+        .lu_vaddr_i       ( icache_areq_i.fetch_vaddr  ),
+        .lu_content_o     ( mmu_itlb_content           ),
+        // .lu_content_o     ( itlb_content               ),
+        // .lu_g_content_o   ( itlb_g_content             ),
+        .lu_gpaddr_o      ( itlb_gpaddr                ),
+
+        .lu_is_page_o     ( itlb_is_page               ),
+        // .lu_is_2M_o       ( itlb_is_2M                 ),
+        // .lu_is_1G_o       ( itlb_is_1G                 ),
+        .lu_hit_o         ( itlb_lu_hit                )
     );
-    // cva6_tlb_sv39x4 #(
-    //     .TLB_ENTRIES      ( INSTR_TLB_ENTRIES          ),
-    //     .ASID_WIDTH       ( ASID_WIDTH                 ),
-    //     .VMID_WIDTH       ( VMID_WIDTH                 )
-    // ) i_itlb (
-    //     .clk_i            ( clk_i                      ),
-    //     .rst_ni           ( rst_ni                     ),
-    //     .flush_i          ( flush_tlb_i                ),
-    //     .flush_vvma_i     ( flush_tlb_vvma_i           ),
-    //     .flush_gvma_i     ( flush_tlb_gvma_i           ),
-    //     .s_st_enbl_i      ( enable_translation_i       ),
-    //     .g_st_enbl_i      ( enable_g_translation_i     ),
-    //     .v_i              ( v_i                        ),
 
-    //     .update_i         ( update_ptw_itlb            ),
-
-    //     .lu_access_i      ( itlb_lu_access             ),
-    //     .lu_asid_i        ( itlb_lu_asid               ),
-    //     .lu_vmid_i        ( vmid_i                     ),
-    //     .asid_to_be_flushed_i  ( asid_to_be_flushed_i  ),
-    //     .vmid_to_be_flushed_i  ( vmid_to_be_flushed_i  ),
-    //     .vaddr_to_be_flushed_i ( vaddr_to_be_flushed_i ),
-    //     .gpaddr_to_be_flushed_i( gpaddr_to_be_flushed_i),
-    //     .lu_vaddr_i       ( icache_areq_i.fetch_vaddr  ),
-    //     .lu_content_o     ( itlb_content               ),
-    //     .lu_g_content_o   ( itlb_g_content             ),
-    //     .lu_gpaddr_o      ( itlb_gpaddr                ),
-
-    //     .lu_is_2M_o       ( itlb_is_2M                 ),
-    //     .lu_is_1G_o       ( itlb_is_1G                 ),
-    //     .lu_hit_o         ( itlb_lu_hit                )
-    // );
-
-    cva6_tlb #(
-        .CVA6Cfg    (ArianeCfg),
+    cva6_tlb2 #(
+        .pte_cva6_t(pte_cva6_t),
+        .tlb_update_cva6_t(tlb_update_cva6_t),
+        .TLB_ENTRIES      ( INSTR_TLB_ENTRIES          ),
         .HYP_EXT(HYP_EXT),
-        .TLB_ENTRIES(INSTR_TLB_ENTRIES),
         .ASID_WIDTH (mmu_ASID_WIDTH),
+        // .ASID_WIDTH       ( ASID_WIDTH                 ),
+        // .VMID_WIDTH       ( VMID_WIDTH                 )
         .ASID_LEN (ASID_LEN),
         .VPN_LEN(VPN_LEN),
-        .PT_LEVELS(PT_LEVELS),
-        .pte_cva6_t(pte_cva6_t),
-        .tlb_update_cva6_t(tlb_update_cva6_t)
+        .PT_LEVELS(PT_LEVELS)
     ) i_dtlb (
-        .clk_i  (clk_i),
-        .rst_ni (rst_ni),
-        .flush_i(mmu_flush_i),
-    
-        .update_i(update_dtlb),
-    
-        .lu_access_i          (dtlb_lu_access),
-        .lu_asid_i            (dtlb_mmu_asid_i),
-        .asid_to_be_flushed_i (mmu_asid_to_be_flushed_i),
+        .clk_i            ( clk_i                       ),
+        .rst_ni           ( rst_ni                      ),
+        // .flush_i          ( flush_tlb_i                ),
+        // .flush_vvma_i     ( flush_tlb_vvma_i           ),
+        // .flush_gvma_i     ( flush_tlb_gvma_i           ),
+        // .s_st_enbl_i      ( enable_translation_i       ),
+        // .g_st_enbl_i      ( enable_g_translation_i     ),
+        // .v_i              ( v_i                        ),
+        .flush_i          ( mmu_flush_i                ),
+        .v_st_enbl_i      ( mmu_v_st_enbl_d            ),
+        .update_i         ( update_dtlb                 ),
+        // .update_i         ( update_ptw_dtlb             ),
+
+        .lu_access_i      ( dtlb_lu_access              ),
+        .lu_asid_i        ( dtlb_mmu_asid_i             ),
+        // .lu_asid_i        ( dtlb_lu_asid                ),
+        // .lu_vmid_i        ( vmid_i                      ),
+        .asid_to_be_flushed_i ( mmu_asid_to_be_flushed_i),
+        // .asid_to_be_flushed_i  ( asid_to_be_flushed_i   ),
+        // .vmid_to_be_flushed_i  ( vmid_to_be_flushed_i   ),
         .vaddr_to_be_flushed_i(mmu_vaddr_to_be_flushed_i),
-        .lu_vaddr_i           (lsu_vaddr_i),
-        .lu_gpaddr_o          (dtlb_gpaddr),
-        .lu_content_o         (mmu_dtlb_content),
-    
-        .lu_is_page_o(dtlb_is_page),
-        .lu_hit_o  (dtlb_lu_hit),
-        .v_st_enbl_i(mmu_v_st_enbl_i)
+        // .vaddr_to_be_flushed_i ( vaddr_to_be_flushed_i  ),
+        // .gpaddr_to_be_flushed_i( gpaddr_to_be_flushed_i ),
+        .lu_vaddr_i       ( lsu_vaddr_i                 ),
+        .lu_content_o     ( mmu_dtlb_content            ),
+        // .lu_content_o     ( dtlb_content                ),
+        // .lu_g_content_o   ( dtlb_g_content              ),
+        .lu_gpaddr_o      ( dtlb_gpaddr                ),
+
+        .lu_is_page_o     ( dtlb_is_page                ),
+        // .lu_is_2M_o       ( dtlb_is_2M                  ),
+        // .lu_is_1G_o       ( dtlb_is_1G                  ),
+        .lu_hit_o         ( dtlb_lu_hit                 )
     );
-    // cva6_tlb_sv39x4 #(
-    //     .TLB_ENTRIES     ( DATA_TLB_ENTRIES             ),
-    //     .ASID_WIDTH      ( ASID_WIDTH                   ),
-    //     .VMID_WIDTH      ( VMID_WIDTH                   )
-    // ) i_dtlb (
-    //     .clk_i            ( clk_i                       ),
-    //     .rst_ni           ( rst_ni                      ),
-    //     .flush_i          ( flush_tlb_i                 ),
-    //     .flush_vvma_i     ( flush_tlb_vvma_i            ),
-    //     .flush_gvma_i     ( flush_tlb_gvma_i            ),
-    //     .s_st_enbl_i      ( en_ld_st_translation_i      ),
-    //     .g_st_enbl_i      ( en_ld_st_g_translation_i    ),
-    //     .v_i              ( ld_st_v_i                   ),
-
-    //     .update_i         ( update_ptw_dtlb             ),
-
-    //     .lu_access_i      ( dtlb_lu_access              ),
-    //     .lu_asid_i        ( dtlb_lu_asid                ),
-    //     .lu_vmid_i        ( vmid_i                      ),
-	//       .asid_to_be_flushed_i  ( asid_to_be_flushed_i   ),
-    //     .vmid_to_be_flushed_i  ( vmid_to_be_flushed_i   ),
-	//       .vaddr_to_be_flushed_i ( vaddr_to_be_flushed_i  ),
-    //     .gpaddr_to_be_flushed_i( gpaddr_to_be_flushed_i ),
-    //     .lu_vaddr_i       ( lsu_vaddr_i                 ),
-    //     .lu_content_o     ( dtlb_content                ),
-    //     .lu_g_content_o   ( dtlb_g_content              ),
-    //     .lu_gpaddr_o      ( dtlb_gpaddr                ),
-
-    //     .lu_is_2M_o       ( dtlb_is_2M                  ),
-    //     .lu_is_1G_o       ( dtlb_is_1G                  ),
-    //     .lu_hit_o         ( dtlb_lu_hit                 )
-    // );
 
 
     cva6_ptw_sv39x4  #(
@@ -483,9 +452,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     //     .probe11(dtlb_lu_hit), // input wire [0:0]  probe11
     //     .probe12(itlb_lu_access), // input wire [0:0]  probe12
     //     .probe13(icache_areq_i.fetch_vaddr), // input wire [0:0]  probe13
-    //     .probe14(itlb_lu_hit), // input wire [0:0]  probe13
-    //     .probe15(mmu_flush_i),
-    //     .probe16(mmu_v_st_enbl_i)
+    //     .probe14(itlb_lu_hit) // input wire [0:0]  probe13
     // );
 
     //-----------------------
