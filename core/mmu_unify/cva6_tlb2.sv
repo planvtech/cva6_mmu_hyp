@@ -95,15 +95,42 @@ struct packed {
   logic [riscv::GPPN2:0] vpn2;
   logic [TLB_ENTRIES-1:0] lu_hit;     // to replacement logic
   logic [TLB_ENTRIES-1:0] replace_en; // replace the following entry, set by replacement strategy
-  logic [TLB_ENTRIES-1:0] match_vmid;
-  logic [TLB_ENTRIES-1:0] match_asid;
-  logic [TLB_ENTRIES-1:0] is_1G;
-  logic [TLB_ENTRIES-1:0] is_2M;
+  // logic [TLB_ENTRIES-1:0] match_vmid;
+  logic [TLB_ENTRIES-1:0][HYP_EXT:0] match_asid;
+  logic [TLB_ENTRIES-1:0][PT_LEVELS-1:0] page_match;
+  logic [TLB_ENTRIES-1:0][PT_LEVELS-2:0] is_page_o;
+  // logic [TLB_ENTRIES-1:0] is_1G;
+  // logic [TLB_ENTRIES-1:0] is_2M;
   logic [TLB_ENTRIES-1:0] match_stage;
   pte_cva6_t  g_content;
   //-------------
   // Translation
   //-------------
+
+  genvar i,x,z,w;
+  generate
+    for (i=0; i < TLB_ENTRIES; i++) begin
+      for (x=0; x < PT_LEVELS; x++) begin 
+        assign page_match[i][x] = x==0 ? 1 :((HYP_EXT==0 || x==(PT_LEVELS-1)) ? // PAGE_MATCH CONTAINS THE MATCH INFORMATION FOR EACH TAG OF is_1G and is_2M in sv39x4. HIGHER LEVEL (Giga page), THEN THERE IS THE Mega page AND AT THE LOWER LEVEL IS ALWAYS 1
+                                                &(tags_q[i].is_page[PT_LEVELS-1-x] | (~v_st_enbl_i[HYP_EXT:0])):
+                                                ((&v_st_enbl_i[HYP_EXT:0]) ? // THIS WILL NEED TO BE OPTIMIZED ONCE WE MAKE IT WORK. INDEX 1 DOES NOT EXIST IN SV32.
+                                                ((tags_q[i].is_page[PT_LEVELS-1-x][0] && (tags_q[i].is_page[PT_LEVELS-2-x][1] || tags_q[i].is_page[PT_LEVELS-1-x][1])) // THE MIDDLE PART CORRESPONDS TO THE is_trans_2M FUNCTION
+                                              || (tags_q[i].is_page[PT_LEVELS-1-x][1] && (tags_q[i].is_page[PT_LEVELS-2-x][0] || tags_q[i].is_page[PT_LEVELS-1-x][0]))):
+                                                  tags_q[i].is_page[PT_LEVELS-1-x][0] && v_st_enbl_i[0] || tags_q[i].is_page[PT_LEVELS-1-x][1] && v_st_enbl_i[1]));
+
+        assign tags_n[i].vpn[x]       = ((~(|flush_i)) && update_i.valid && replace_en[i]) ? update_i.vpn[(1+x)*(VPN_LEN/PT_LEVELS)-1:x*(VPN_LEN/PT_LEVELS)] : tags_q[i].vpn[x];
+      end
+      
+      if(HYP_EXT==1) begin //THIS UPDATES THE EXTRA BITS OF VPN IN SV39x4
+        assign tags_n[i].vpn[PT_LEVELS][(VPN_LEN%PT_LEVELS)-1:0] =((~(|flush_i)) && update_i.valid && replace_en[i]) ? update_i.vpn[VPN_LEN-1: VPN_LEN-(VPN_LEN%PT_LEVELS)] : tags_q[i].vpn[PT_LEVELS][(VPN_LEN%PT_LEVELS)-1:0];         
+      end
+
+      for (w=0; w < PT_LEVELS - 1; w++) begin  
+        assign is_page_o[i][w] = page_match[i][PT_LEVELS - 1 - w]; //THIS REORGANIZES THE PAGES TO MATCH THE OUTPUT STRUCTURE (2M,1G)
+      end
+    end
+  endgenerate
+
   always_comb begin : translation
       automatic logic [riscv::GPPN2:0] mask_pn2;
       mask_pn2 = v_st_enbl_i[0] ? ((2**(riscv::VPN2+1))-1) : ((2**(riscv::GPPN2+1))-1);
@@ -121,10 +148,10 @@ struct packed {
     //   lu_is_page_o[0]     = 1'b0;
     //   lu_is_page_o[1]     = 1'b0;
       match_asid     = '{default: 0};
-      match_vmid     = '{default: 0};
+      // match_vmid     = '{default: 0};
       match_stage    = '{default: 0};
-      is_1G          = '{default: 0};
-      is_2M          = '{default: 0};
+      // is_1G          = '{default: 0};
+      // is_2M          = '{default: 0};
       g_content      = '{default: 0};
       lu_gpaddr_o    = '{default: 0};
 
@@ -132,27 +159,32 @@ struct packed {
       for (int unsigned i = 0; i < TLB_ENTRIES; i++) begin
           // first level match, this may be a giga page, check the ASID flags as well
           // if the entry is associated to a global address, don't match the ASID (ASID is don't care)
-          match_asid[i] = (((lu_asid_i[0] == tags_q[i].asid[0]) || content_q[i][0].g) && v_st_enbl_i[0]) || !v_st_enbl_i[0];
-          match_vmid[i] = (lu_asid_i[1][ASID_WIDTH[1]-1:0] == tags_q[i].asid[1][ASID_WIDTH[1]-1:0] && v_st_enbl_i[HYP_EXT]) || !v_st_enbl_i[HYP_EXT];
-          is_1G[i] = is_trans_1G(v_st_enbl_i[0],
-                                 v_st_enbl_i[HYP_EXT],
-                                 tags_q[i].is_page[0][0],
-                                 tags_q[i].is_page[0][1]
-                              );
-          is_2M[i] = is_trans_2M(v_st_enbl_i[0],
-                                 v_st_enbl_i[HYP_EXT],
-                                 tags_q[i].is_page[0][0],
-                                 tags_q[i].is_page[1][0],
-                                 tags_q[i].is_page[0][1],
-                                 tags_q[i].is_page[1][1]
-                              );
+          match_asid[i][0] = (((lu_asid_i[0] == tags_q[i].asid[0]) || content_q[i][0].g) && v_st_enbl_i[0]) || !v_st_enbl_i[0];
+
+          if(HYP_EXT==1) begin
+            match_asid[i][HYP_EXT] = (lu_asid_i[HYP_EXT][ASID_WIDTH[HYP_EXT]-1:0] == tags_q[i].asid[HYP_EXT][ASID_WIDTH[HYP_EXT]-1:0] && v_st_enbl_i[HYP_EXT]) || !v_st_enbl_i[HYP_EXT];
+          end
+          
+          // is_1G[i] = is_trans_1G(v_st_enbl_i[0],
+          //                        v_st_enbl_i[HYP_EXT],
+          //                        tags_q[i].is_page[0][0],
+          //                        tags_q[i].is_page[0][1]
+          //                     );
+          // is_2M[i] = is_trans_2M(v_st_enbl_i[0],
+          //                        v_st_enbl_i[HYP_EXT],
+          //                        tags_q[i].is_page[0][0],
+          //                        tags_q[i].is_page[1][0],
+          //                        tags_q[i].is_page[0][1],
+          //                        tags_q[i].is_page[1][1]
+          //                     );
           // check if translation is a: S-Stage and G-Stage, S-Stage only or G-Stage only translation and virtualization mode is on/off
           match_stage[i] = tags_q[i].v_st_enbl == v_st_enbl_i;
         //   match_stage[i] = (tags_q[i].v == v_st_enbl_i[HYP_EXT*2]) && (tags_q[i].g_st_enbl == v_st_enbl_i[HYP_EXT]) && (tags_q[i].s_st_enbl == v_st_enbl_i[0]);
-          if (tags_q[i].valid && match_asid[i] && match_vmid[i] && match_stage[i] && (vpn2 == ({tags_q[i].vpn[3][(VPN_LEN%PT_LEVELS)-1:0],tags_q[i].vpn[2]} & mask_pn2))) begin
+          // if (tags_q[i].valid && match_asid[i] && match_vmid[i] && match_stage[i] && (vpn2 == ({tags_q[i].vpn[3][(VPN_LEN%PT_LEVELS)-1:0],tags_q[i].vpn[2]} & mask_pn2))) begin
+          if (tags_q[i].valid && &match_asid[i] && match_stage[i] && (vpn2 == ({tags_q[i].vpn[3][(VPN_LEN%PT_LEVELS)-1:0],tags_q[i].vpn[2]} & mask_pn2))) begin
               lu_gpaddr_o = make_gpaddr(v_st_enbl_i[0], tags_q[i].is_page[0][0], tags_q[i].is_page[1][0], lu_vaddr_i, content_q[i][0]);
-              if (is_1G[i]) begin
-                    lu_is_page_o[0]      = is_1G[i];
+              if (page_match[i][2]) begin
+                    lu_is_page_o      = is_page_o[i];
                     lu_content_o    = content_q[i];
                     // lu_content_o[0]    = content_q[i][0];
                     // lu_content_o[1]  = content_q[i][1];
@@ -162,8 +194,8 @@ struct packed {
               end else if (vpn1 == tags_q[i].vpn[1]) begin
                   // this could be a 2 mega page hit or a 4 kB hit
                   // output accordingly
-                  if (is_2M[i] || vpn0 == tags_q[i].vpn[0]) begin
-                          lu_is_page_o[1] = is_2M[i];
+                  if (page_match[i][1] || vpn0 == tags_q[i].vpn[0]) begin
+                          lu_is_page_o = is_page_o[i];
                           // Compute G-Stage PPN based on the gpaddr
                           g_content = content_q[i][1];
                           if(tags_q[i].is_page[1][1])
@@ -205,10 +237,16 @@ struct packed {
   // Update and Flush
   // ------------------
   always_comb begin : update_flush
-      tags_n    = tags_q;
+      // tags_n    = tags_q;
       content_n = content_q;
 
       for (int unsigned i = 0; i < TLB_ENTRIES; i++) begin
+
+          tags_n[i].asid    = tags_q[i].asid;
+          tags_n[i].is_page    = tags_q[i].is_page;
+          tags_n[i].valid    = tags_q[i].valid;
+          tags_n[i].v_st_enbl =tags_q[i].v_st_enbl;
+          // tags_n[i].vpn = tags_q[i].vpn;
 
           vaddr_vpn0_match[i] = (vaddr_to_be_flushed_i[0][20:12] == tags_q[i].vpn[0]);
           vaddr_vpn1_match[i] = (vaddr_to_be_flushed_i[0][29:21] == tags_q[i].vpn[1]);
@@ -284,10 +322,10 @@ struct packed {
                 //   valid: 1'b1
             //   };
               tags_n[i].asid =  update_i.asid;
-              tags_n[i].vpn[3]=  update_i.vpn[18+riscv::GPPN2:18+riscv::GPPN2-2];
-              tags_n[i].vpn[2]=  update_i.vpn[18+riscv::VPN2:18];
-              tags_n[i].vpn[1]=  update_i.vpn [17:9];
-              tags_n[i].vpn[0]=  update_i.vpn [8:0];
+              // tags_n[i].vpn[3]=  update_i.vpn[18+riscv::GPPN2:18+riscv::GPPN2-2];
+              // tags_n[i].vpn[2]=  update_i.vpn[18+riscv::VPN2:18];
+              // tags_n[i].vpn[1]=  update_i.vpn [17:9];
+              // tags_n[i].vpn[0]=  update_i.vpn [8:0];
               tags_n[i].v_st_enbl=  v_st_enbl_i;
               tags_n[i].is_page= update_i.is_page;
               tags_n[i].valid= 1'b1;
