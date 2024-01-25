@@ -91,8 +91,10 @@ struct packed {
 
   pte_cva6_t [TLB_ENTRIES-1:0][HYP_EXT:0] content_q , content_n;
 
-  logic [8:0] vpn0, vpn1;
-  logic [riscv::GPPN2:0] vpn2;
+  logic [TLB_ENTRIES-1:0][PT_LEVELS-1:0] vpn_match;
+  // logic [TLB_ENTRIES-1:0][PT_LEVELS-1:0] level_match;
+  // logic [8:0] vpn0, vpn1;
+  // logic [riscv::GPPN2:0] vpn2;
   logic [TLB_ENTRIES-1:0] lu_hit;     // to replacement logic
   logic [TLB_ENTRIES-1:0] replace_en; // replace the following entry, set by replacement strategy
   // logic [TLB_ENTRIES-1:0] match_vmid;
@@ -111,6 +113,7 @@ struct packed {
   generate
     for (i=0; i < TLB_ENTRIES; i++) begin
       for (x=0; x < PT_LEVELS; x++) begin 
+        //identify page_match for all TLB Entries  
         assign page_match[i][x] = x==0 ? 1 :((HYP_EXT==0 || x==(PT_LEVELS-1)) ? // PAGE_MATCH CONTAINS THE MATCH INFORMATION FOR EACH TAG OF is_1G and is_2M in sv39x4. HIGHER LEVEL (Giga page), THEN THERE IS THE Mega page AND AT THE LOWER LEVEL IS ALWAYS 1
                                                 &(tags_q[i].is_page[PT_LEVELS-1-x] | (~v_st_enbl_i[HYP_EXT:0])):
                                                 ((&v_st_enbl_i[HYP_EXT:0]) ? // THIS WILL NEED TO BE OPTIMIZED ONCE WE MAKE IT WORK. INDEX 1 DOES NOT EXIST IN SV32.
@@ -118,6 +121,14 @@ struct packed {
                                               || (tags_q[i].is_page[PT_LEVELS-1-x][1] && (tags_q[i].is_page[PT_LEVELS-2-x][0] || tags_q[i].is_page[PT_LEVELS-1-x][0]))):
                                                   tags_q[i].is_page[PT_LEVELS-1-x][0] && v_st_enbl_i[0] || tags_q[i].is_page[PT_LEVELS-1-x][1] && v_st_enbl_i[1]));
 
+        //identify if vpn matches at all PT levels for all TLB entries  
+        assign vpn_match[i][x]        = (HYP_EXT==1 && x==(PT_LEVELS-1) && ~v_st_enbl_i[0]) ? //
+                                        lu_vaddr_i[12+((VPN_LEN/PT_LEVELS)*(x+1))-1:12+((VPN_LEN/PT_LEVELS)*x)] == tags_q[i].vpn[x] && lu_vaddr_i[12+VPN_LEN-1: 12+VPN_LEN-(VPN_LEN%PT_LEVELS)] == tags_q[i].vpn[x+1][(VPN_LEN%PT_LEVELS)-1:0]: //
+                                        lu_vaddr_i[12+((VPN_LEN/PT_LEVELS)*(x+1))-1:12+((VPN_LEN/PT_LEVELS)*x)] == tags_q[i].vpn[x];
+        
+        //identify if there is a hit at each PT level for all TLB entries  
+        // assign level_match[i][x]      = &vpn_match[i][PT_LEVELS-1:x] && page_match[i][x];
+                  
         assign tags_n[i].vpn[x]       = ((~(|flush_i)) && update_i.valid && replace_en[i]) ? update_i.vpn[(1+x)*(VPN_LEN/PT_LEVELS)-1:x*(VPN_LEN/PT_LEVELS)] : tags_q[i].vpn[x];
       end
       
@@ -132,11 +143,11 @@ struct packed {
   endgenerate
 
   always_comb begin : translation
-      automatic logic [riscv::GPPN2:0] mask_pn2;
-      mask_pn2 = v_st_enbl_i[0] ? ((2**(riscv::VPN2+1))-1) : ((2**(riscv::GPPN2+1))-1);
-      vpn0 = lu_vaddr_i[20:12];
-      vpn1 = lu_vaddr_i[29:21];
-      vpn2 = lu_vaddr_i[30+riscv::GPPN2:30] & mask_pn2;
+      // automatic logic [riscv::GPPN2:0] mask_pn2;
+      // mask_pn2 = v_st_enbl_i[0] ? ((2**(riscv::VPN2+1))-1) : ((2**(riscv::GPPN2+1))-1);
+      // vpn0 = lu_vaddr_i[20:12];
+      // vpn1 = lu_vaddr_i[29:21];
+      // vpn2 = lu_vaddr_i[30+riscv::GPPN2:30] & mask_pn2;
 
       // default assignment
       lu_hit         = '{default: 0};
@@ -181,34 +192,38 @@ struct packed {
           match_stage[i] = tags_q[i].v_st_enbl == v_st_enbl_i;
         //   match_stage[i] = (tags_q[i].v == v_st_enbl_i[HYP_EXT*2]) && (tags_q[i].g_st_enbl == v_st_enbl_i[HYP_EXT]) && (tags_q[i].s_st_enbl == v_st_enbl_i[0]);
           // if (tags_q[i].valid && match_asid[i] && match_vmid[i] && match_stage[i] && (vpn2 == ({tags_q[i].vpn[3][(VPN_LEN%PT_LEVELS)-1:0],tags_q[i].vpn[2]} & mask_pn2))) begin
-          if (tags_q[i].valid && &match_asid[i] && match_stage[i] && (vpn2 == ({tags_q[i].vpn[3][(VPN_LEN%PT_LEVELS)-1:0],tags_q[i].vpn[2]} & mask_pn2))) begin
+          if (tags_q[i].valid && &match_asid[i] && match_stage[i] && vpn_match[i][2]) begin
+
+            // if(HYP_EXT==1 && vpn_match[i][HYP_EXT*2])
               lu_gpaddr_o = make_gpaddr(v_st_enbl_i[0], tags_q[i].is_page[0][0], tags_q[i].is_page[1][0], lu_vaddr_i, content_q[i][0]);
-              if (page_match[i][2]) begin
-                    lu_is_page_o      = is_page_o[i];
-                    lu_content_o    = content_q[i];
-                    // lu_content_o[0]    = content_q[i][0];
-                    // lu_content_o[1]  = content_q[i][1];
-                    lu_hit_o        = 1'b1;
-                    lu_hit[i]       = 1'b1;
-              // not a giga page hit so check further
-              end else if (vpn1 == tags_q[i].vpn[1]) begin
-                  // this could be a 2 mega page hit or a 4 kB hit
-                  // output accordingly
-                  if (page_match[i][1] || vpn0 == tags_q[i].vpn[0]) begin
-                          lu_is_page_o = is_page_o[i];
-                          // Compute G-Stage PPN based on the gpaddr
-                          g_content = content_q[i][1];
-                          if(tags_q[i].is_page[1][1])
-                              g_content.ppn[8:0] = lu_gpaddr_o[20:12];
-                          if(tags_q[i].is_page[0][1])
-                              g_content.ppn[17:0] = lu_gpaddr_o[29:12];
-                          // Output G-stage and S-stage content
-                          lu_content_o[1]    = g_content;
-                          lu_content_o[0]     = content_q[i][0];
-                          lu_hit_o          = 1'b1;
-                          lu_hit[i]         = 1'b1;
-                  end
+
+            if (page_match[i][2]) begin
+                  lu_is_page_o      = is_page_o[i];
+                  lu_content_o    = content_q[i];
+                  // lu_content_o[0]    = content_q[i][0];
+                  // lu_content_o[1]  = content_q[i][1];
+                  lu_hit_o        = 1'b1;
+                  lu_hit[i]       = 1'b1;
+            // not a giga page hit so check further
+            end else if (vpn_match[i][1]) begin
+            // end else if (level_match[i][1] || level_match[i][0]) begin
+              // this could be a 2 mega page hit or a 4 kB hit
+              // output accordingly
+              if (page_match[i][1] || vpn_match[i][0]) begin
+                lu_is_page_o = is_page_o[i];
+                // Compute G-Stage PPN based on the gpaddr
+                g_content = content_q[i][1];
+                if(tags_q[i].is_page[1][1])
+                    g_content.ppn[8:0] = lu_gpaddr_o[20:12];
+                if(tags_q[i].is_page[0][1])
+                    g_content.ppn[17:0] = lu_gpaddr_o[29:12];
+                // Output G-stage and S-stage content
+                lu_content_o[1]    = g_content;
+                lu_content_o[0]     = content_q[i][0];
+                lu_hit_o          = 1'b1;
+                lu_hit[i]         = 1'b1;
               end
+            end
           end
       end
   end
