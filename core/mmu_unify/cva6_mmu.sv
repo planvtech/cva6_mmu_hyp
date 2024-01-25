@@ -303,7 +303,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     assign update_dtlb.content[1].r = update_ptw_dtlb.g_content.r;
     assign update_dtlb.content[1].v = update_ptw_dtlb.g_content.v;
 
-    cva6_tlb2 #(
+    cva6_tlb #(
         .pte_cva6_t(pte_cva6_t),
         .tlb_update_cva6_t(tlb_update_cva6_t),
         .TLB_ENTRIES      ( INSTR_TLB_ENTRIES          ),
@@ -351,7 +351,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
         .lu_hit_o         ( itlb_lu_hit                )
     );
 
-    cva6_tlb2 #(
+    cva6_tlb #(
         .pte_cva6_t(pte_cva6_t),
         .tlb_update_cva6_t(tlb_update_cva6_t),
         .TLB_ENTRIES      ( INSTR_TLB_ENTRIES          ),
