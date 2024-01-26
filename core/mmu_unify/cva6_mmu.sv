@@ -1,4 +1,4 @@
-// Copyright (c) 2022  Bruno Sá and Zero-Day Labs.
+// Copyright (c) 2021 Thales.
 // Copyright and related rights are licensed under the Solderpad Hardware
 // License, Version 0.51 (the "License"); you may not use this file except in
 // compliance with the License.  You may obtain a copy of the License at
@@ -8,31 +8,34 @@
 // CONDITIONS OF ANY KIND, either express or implied. See the License for the
 // specific language governing permissions and limitations under the License.
 //
-// Author: Bruno Sá
-// Date: 14/08/2022
-// Acknowledges: Technology Innovation Institute (TII)
+// Author: Angela Gonzalez, PlanV Technology
+// Date: 26/01/2024
 //
-// Description: Memory Management Unit for CV32A6, contains TLB and
-//              address translation unit. Sv39x4 as defined in RISC-V
-//              privilege specification 1.12.
-//              This module is an adaptation of the MMU Sv39x4 developed
-//              by Florian Zaruba to the Sv39x4 standard.
+// Description: Memory Management Unit for CVA6, contains TLB and
+//              address translation unit. SV32 and SV39 as defined in RISC-V
+//              privilege specification 1.11-WIP.
+//              This module is an merge of the MMU Sv39 developed
+//              by Florian Zaruba and the MMU Sv32 developed by Sebastien Jacq.
 
 
 module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
+    parameter ariane_pkg::ariane_cfg_t ArianeCfg = ariane_pkg::ArianeDefaultConfig,
     parameter int unsigned INSTR_TLB_ENTRIES     = 4,
     parameter int unsigned DATA_TLB_ENTRIES      = 4,
-    parameter int unsigned ASID_WIDTH            = 1,
-    parameter int unsigned VMID_WIDTH            = 1,
-    parameter ariane_pkg::ariane_cfg_t ArianeCfg = ariane_pkg::ArianeDefaultConfig
+    parameter logic                  HYP_EXT = 0,
+    parameter int unsigned           ASID_WIDTH [HYP_EXT:0],
+    parameter int unsigned           ASID_LEN = 1,
+    parameter int unsigned           VPN_LEN = 1,
+    parameter int unsigned           PT_LEVELS = 1
+    
 ) (
     input  logic                            clk_i,
     input  logic                            rst_ni,
     input  logic                            flush_i,
-    input  logic                            enable_translation_i,
-    input  logic                            enable_g_translation_i,
-    input  logic                            en_ld_st_translation_i,   // enable virtual memory translation for load/stores
-    input  logic                            en_ld_st_g_translation_i, // enable G-Stage translation for load/stores
+    input  logic   [HYP_EXT*2:0]              enable_translation_i, //[v_i,enable_g_translation,enable_translation]
+    // input  logic                            enable_g_translation_i,
+    input  logic   [HYP_EXT*2:0]              en_ld_st_translation_i,   // enable virtual memory translation for load/stores
+    // input  logic                            en_ld_st_g_translation_i, // enable G-Stage translation for load/stores
     // IF interface
     input  icache_areq_o_t                  icache_areq_i,
     output icache_areq_i_t                  icache_areq_o,
@@ -55,29 +58,29 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     output exception_t                      lsu_exception_o,  // address translation threw an exception
     // General control signals
     input riscv::priv_lvl_t                 priv_lvl_i,
-    input logic                             v_i,
+    // input logic                             v_i,
     input riscv::priv_lvl_t                 ld_st_priv_lvl_i,
-    input logic                             ld_st_v_i,
-    input logic                             sum_i,
-    input logic                             vs_sum_i,
-    input logic                             mxr_i,
-    input logic                             vmxr_i,
+    // input logic                             ld_st_v_i,
+    input logic    [HYP_EXT:0]              sum_i,
+    // input logic                             vs_sum_i,
+    input logic    [HYP_EXT:0]              mxr_i,
+    // input logic                             vmxr_i,
     input logic                             hlvx_inst_i,
     input logic                             hs_ld_st_inst_i,
     // input logic flag_mprv_i,
-    input logic [riscv::PPNW-1:0]           satp_ppn_i,
-    input logic [riscv::PPNW-1:0]           vsatp_ppn_i,
-    input logic [riscv::PPNW-1:0]           hgatp_ppn_i,
-    input logic [ASID_WIDTH-1:0]            asid_i,
-    input logic [ASID_WIDTH-1:0]            vs_asid_i,
-    input logic [ASID_WIDTH-1:0]            asid_to_be_flushed_i,
-    input logic [VMID_WIDTH-1:0]            vmid_i,
-    input logic [VMID_WIDTH-1:0]            vmid_to_be_flushed_i,
-    input logic [riscv::VLEN-1:0]           vaddr_to_be_flushed_i,
-    input logic [riscv::GPLEN-1:0]          gpaddr_to_be_flushed_i,
-    input logic                             flush_tlb_i,
-    input logic                             flush_tlb_vvma_i,
-    input logic                             flush_tlb_gvma_i,
+    input logic [riscv::PPNW-1:0]           satp_ppn_i[HYP_EXT*2:0],//[hgatp,vsatp,satp]
+    // input logic [riscv::PPNW-1:0]           vsatp_ppn_i,
+    // input logic [riscv::PPNW-1:0]           hgatp_ppn_i,
+    input logic [ASID_WIDTH[0]-1:0]            asid_i[HYP_EXT*2:0],//[vmid,vs_asid,asid]
+    // input logic [ASID_WIDTH[0]-1:0]            vs_asid_i,
+    input logic [ASID_WIDTH[0]-1:0]            asid_to_be_flushed_i[HYP_EXT:0],
+    // input logic [VMID_WIDTH-1:0]            vmid_i,
+    // input logic [VMID_WIDTH-1:0]            vmid_to_be_flushed_i,
+    input logic [riscv::VLEN-1:0]           vaddr_to_be_flushed_i[HYP_EXT:0],
+    // input logic [riscv::GPLEN-1:0]          gpaddr_to_be_flushed_i,
+    input logic    [HYP_EXT*2:0]               flush_tlb_i,
+    // input logic                             flush_tlb_vvma_i,
+    // input logic                             flush_tlb_gvma_i,
     // Performance counters
     output logic                            itlb_miss_o,
     output logic                            dtlb_miss_o,
@@ -89,11 +92,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     input  logic [15:0][riscv::PLEN-3:0]    pmpaddr_i
 );
 
-    localparam int unsigned HYP_EXT  = ariane_pkg::RVH ? 1 : 0;
-    localparam ASID_LEN      = (riscv::XLEN == 64) ? 16 : 9;
-    localparam VPN_LEN       = (riscv::XLEN == 64) ? (HYP_EXT==1 ? 29 : 27) : 20;
-    localparam PT_LEVELS     = (riscv::XLEN == 64) ? 3  : 2;
-    localparam int unsigned mmu_ASID_WIDTH [HYP_EXT:0] = {VMID_WIDTH,ASID_WIDTH};
+    
 
     // memory management, pte for cva6
     localparam type pte_cva6_t = struct packed {
@@ -145,7 +144,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     riscv::pte_t itlb_g_content;
     logic        itlb_lu_hit;
     logic [riscv::GPLEN-1:0]  itlb_gpaddr;
-    logic [ASID_WIDTH-1:0]    itlb_lu_asid;
+    logic [ASID_WIDTH[0]-1:0]    itlb_lu_asid;
 
     logic        dtlb_lu_access;
     riscv::pte_t dtlb_content;
@@ -153,48 +152,50 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     logic        dtlb_is_2M;
     logic        dtlb_is_1G;
     logic [PT_LEVELS-2:0]               dtlb_is_page;
-    logic [ASID_WIDTH-1:0]    dtlb_lu_asid;
+    logic [ASID_WIDTH[0]-1:0]    dtlb_lu_asid;
     // data from G-stage translation
     riscv::pte_t dtlb_g_content;
     logic        dtlb_lu_hit;
     logic [riscv::GPLEN-1:0] dtlb_gpaddr;
 
-    logic [mmu_ASID_WIDTH[0]-1:0] dtlb_mmu_asid_i [HYP_EXT:0];
-    logic [mmu_ASID_WIDTH[0]-1:0] itlb_mmu_asid_i [HYP_EXT:0];
-    logic [mmu_ASID_WIDTH[0]-1:0] mmu_asid_to_be_flushed_i [HYP_EXT:0];
+    logic [ASID_WIDTH[0]-1:0] dtlb_mmu_asid_i [HYP_EXT:0];
+    logic [ASID_WIDTH[0]-1:0] itlb_mmu_asid_i [HYP_EXT:0];
+    logic [ASID_WIDTH[0]-1:0] mmu_asid_to_be_flushed_i [HYP_EXT:0];
     logic [riscv::VLEN-1:0] mmu_vaddr_to_be_flushed_i [HYP_EXT:0];
     logic [2:0] mmu_flush_i,mmu_v_st_enbl_i,mmu_v_st_enbl_d;
 
-    logic [HYP_EXT:0] sum;
-
-
     // Assignments
-    assign sum[0] = sum_i;
-    assign sum[1] = vs_sum_i;
 
     assign itlb_lu_access = icache_areq_i.fetch_req;
     assign dtlb_lu_access = lsu_req_i;
-    assign itlb_lu_asid = mmu_v_st_enbl_i[2] ? vs_asid_i : asid_i;
-    assign dtlb_lu_asid = (mmu_v_st_enbl_d[2] || flush_tlb_vvma_i) ? vs_asid_i : asid_i;
+    
+    assign mmu_flush_i = flush_tlb_i;
+    assign mmu_v_st_enbl_i = enable_translation_i;
+    assign mmu_v_st_enbl_d = en_ld_st_translation_i;
+    assign mmu_asid_to_be_flushed_i = asid_to_be_flushed_i;
+    assign mmu_vaddr_to_be_flushed_i = vaddr_to_be_flushed_i;
+    
+    genvar b;
+    generate
+        for (b=0; b < HYP_EXT+1; b++) begin  
+            assign dtlb_mmu_asid_i[b] = b==0 ? 
+                                        ((mmu_v_st_enbl_i[2*HYP_EXT] || mmu_flush_i[HYP_EXT]) ? asid_i[HYP_EXT] : asid_i[0]): 
+                                        asid_i[HYP_EXT*2];
+            assign itlb_mmu_asid_i[b] = b==0 ?
+                                        (mmu_v_st_enbl_i[2*HYP_EXT] ? asid_i[HYP_EXT] : asid_i[0]):
+                                        asid_i[HYP_EXT*2];
+        end
+    endgenerate
 
-    assign mmu_flush_i[2] = flush_tlb_gvma_i;
-    assign mmu_flush_i[1] = flush_tlb_vvma_i;
-    assign mmu_flush_i[0] = flush_tlb_i;
-    assign mmu_v_st_enbl_i[2] =v_i;
-    assign mmu_v_st_enbl_i[1] =enable_g_translation_i;
-    assign mmu_v_st_enbl_i[0] =enable_translation_i;
-    assign mmu_v_st_enbl_d[2] =ld_st_v_i;
-    assign mmu_v_st_enbl_d[1] =en_ld_st_g_translation_i;
-    assign mmu_v_st_enbl_d[0] =en_ld_st_translation_i;
+    // assign itlb_lu_asid = mmu_v_st_enbl_i[2*HYP_EXT] ? asid_i[HYP_EXT*2] : asid_i[0];
+    // assign dtlb_lu_asid = (mmu_v_st_enbl_i[2*HYP_EXT] || mmu_flush_i[HYP_EXT]) ? asid_i[HYP_EXT*2] : asid_i[0];
 
-    assign dtlb_mmu_asid_i[0] = (mmu_ASID_WIDTH[0])'(dtlb_lu_asid);
-    assign dtlb_mmu_asid_i[1] = (mmu_ASID_WIDTH[0])'(vmid_i);
-    assign itlb_mmu_asid_i[0] = (mmu_ASID_WIDTH[0])'(itlb_lu_asid);
-    assign itlb_mmu_asid_i[1] = (mmu_ASID_WIDTH[0])'(vmid_i);
-    assign mmu_asid_to_be_flushed_i[0] =(mmu_ASID_WIDTH[0])'(asid_to_be_flushed_i);
-    assign mmu_asid_to_be_flushed_i[1] =(mmu_ASID_WIDTH[0])'(vmid_to_be_flushed_i);
-    assign mmu_vaddr_to_be_flushed_i[0] =(riscv::VLEN)'(vaddr_to_be_flushed_i);
-    assign mmu_vaddr_to_be_flushed_i[1] =(riscv::VLEN)'(gpaddr_to_be_flushed_i);
+    // assign dtlb_mmu_asid_i[0] = (mmu_ASID_WIDTH[0])'(dtlb_lu_asid);
+    // assign dtlb_mmu_asid_i[1] = (mmu_ASID_WIDTH[0])'(vmid_i);
+    // assign itlb_mmu_asid_i[0] = (mmu_ASID_WIDTH[0])'(itlb_lu_asid);
+    // assign itlb_mmu_asid_i[1] = (mmu_ASID_WIDTH[0])'(vmid_i);
+
+    
 
     assign itlb_is_2M = itlb_is_page[1];
     assign itlb_is_1G = itlb_is_page[0];
@@ -252,7 +253,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     assign update_itlb.is_page[1][1]=update_ptw_itlb.is_g_2M;
     assign update_itlb.vpn = update_ptw_itlb.vpn;
     assign update_itlb.asid[0] = update_ptw_itlb.asid;
-    assign update_itlb.asid[1] = (mmu_ASID_WIDTH[0])'(update_ptw_itlb.vmid);
+    assign update_itlb.asid[1] = (ASID_WIDTH[0])'(update_ptw_itlb.vmid);
 
     assign update_itlb.content[0].ppn = update_ptw_itlb.content.ppn;
     assign update_itlb.content[0].rsw = update_ptw_itlb.content.rsw;
@@ -284,7 +285,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     assign update_dtlb.is_page[1][1]=update_ptw_dtlb.is_g_2M;
     assign update_dtlb.vpn = update_ptw_dtlb.vpn;
     assign update_dtlb.asid[0] = update_ptw_dtlb.asid;
-    assign update_dtlb.asid[1] = (mmu_ASID_WIDTH[0])'(update_ptw_dtlb.vmid);
+    assign update_dtlb.asid[1] = (ASID_WIDTH[0])'(update_ptw_dtlb.vmid);
     
     assign update_dtlb.content[0].ppn = update_ptw_dtlb.content.ppn;
     assign update_dtlb.content[0].rsw = update_ptw_dtlb.content.rsw;
@@ -313,7 +314,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
         .tlb_update_cva6_t(tlb_update_cva6_t),
         .TLB_ENTRIES      ( INSTR_TLB_ENTRIES          ),
         .HYP_EXT(HYP_EXT),
-        .ASID_WIDTH (mmu_ASID_WIDTH),
+        .ASID_WIDTH (ASID_WIDTH),
         // .ASID_WIDTH       ( ASID_WIDTH                 ),
         // .VMID_WIDTH       ( VMID_WIDTH                 )
         .ASID_LEN (ASID_LEN),
@@ -361,7 +362,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
         .tlb_update_cva6_t(tlb_update_cva6_t),
         .TLB_ENTRIES      ( INSTR_TLB_ENTRIES          ),
         .HYP_EXT(HYP_EXT),
-        .ASID_WIDTH (mmu_ASID_WIDTH),
+        .ASID_WIDTH (ASID_WIDTH),
         // .ASID_WIDTH       ( ASID_WIDTH                 ),
         // .VMID_WIDTH       ( VMID_WIDTH                 )
         .ASID_LEN (ASID_LEN),
@@ -405,7 +406,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
 
 
     cva6_ptw_sv39x4  #(
-        .ASID_WIDTH             ( ASID_WIDTH            ),
+        .ASID_WIDTH             ( ASID_WIDTH[0]            ),
         .VMID_WIDTH             ( VMID_WIDTH            ),
         .ArianeCfg              ( ArianeCfg             )
     ) i_ptw (
@@ -419,6 +420,13 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
         .ptw_access_exception_o ( ptw_access_exception  ),
         .enable_translation_i   ( mmu_v_st_enbl_i[0]  ),
         .enable_g_translation_i ( mmu_v_st_enbl_i[1]),
+        .v_i                    ( mmu_v_st_enbl_i[2]),
+        .en_ld_st_translation_i ( mmu_v_st_enbl_d[0]),
+        .en_ld_st_g_translation_i( mmu_v_st_enbl_d[1]),
+        .ld_st_v_i              (mmu_v_st_enbl_d[2]),
+        .asid_i                 (asid_i[0]),
+        .vmid_i                 (asid_i[2]),
+        .vs_asid_i              (asid_i[1]),
 
         .update_vaddr_o         ( update_vaddr          ),
         .itlb_update_o          ( update_ptw_itlb       ),
@@ -435,6 +443,11 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
 
         .req_port_i             ( req_port_i            ),
         .req_port_o             ( req_port_o            ),
+        .mxr_i                  (mxr_i[0]               ),
+        .vmxr_i                 (mxr_i[1]               ),
+        .satp_ppn_i             (satp_ppn_i[0]          ),
+        .vsatp_ppn_i             (satp_ppn_i[1]          ),
+        .hgatp_ppn_i             (satp_ppn_i[2]          ),
         .pmpcfg_i,
         .pmpaddr_i,
         // .bad_paddr_o            ( ptw_bad_paddr[0])
@@ -610,7 +623,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                             {{riscv::XLEN-riscv::VLEN{1'b0}}, update_vaddr},
                             ptw_bad_paddr[HYP_EXT][riscv::GPLEN-1:0],
                             (ptw_error[HYP_EXT*2] ? (riscv::IS_XLEN64 ? riscv::READ_64_PSEUDOINSTRUCTION : riscv::READ_32_PSEUDOINSTRUCTION) : {riscv::XLEN{1'b0}}),
-                            v_i,
+                            mmu_v_st_enbl_i[2*HYP_EXT],
                             1'b1
                         };
                     end else begin
@@ -620,7 +633,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                                 {{riscv::XLEN-riscv::VLEN{1'b0}}, update_vaddr},
                                 {riscv::GPLEN{1'b0}},
                                 {riscv::XLEN{1'b0}},
-                                v_i,
+                                mmu_v_st_enbl_i[2*HYP_EXT],
                                 1'b1
                             };
                         end
@@ -789,7 +802,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
         // Check if the User flag is set, then we may only access it in supervisor mode
         // if SUM is enabled
         daccess_err[0] = mmu_v_st_enbl_d[0] &&
-                        ((ld_st_priv_lvl_i == riscv::PRIV_LVL_S && (mmu_v_st_enbl_d[HYP_EXT*2] ? !sum[HYP_EXT] : !sum[0] ) && dtlb_pte_q[0].u) || // SUM is not set and we are trying to access a user page in supervisor mode
+                        ((ld_st_priv_lvl_i == riscv::PRIV_LVL_S && (mmu_v_st_enbl_d[HYP_EXT*2] ? !sum_i[HYP_EXT] : !sum_i[0] ) && dtlb_pte_q[0].u) || // SUM is not set and we are trying to access a user page in supervisor mode
                         (ld_st_priv_lvl_i == riscv::PRIV_LVL_U && !dtlb_pte_q[0].u));
         
         if(HYP_EXT==1)
