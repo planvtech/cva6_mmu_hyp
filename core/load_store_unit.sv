@@ -234,7 +234,7 @@ module load_store_unit import ariane_pkg::*; #(
             
             
             .satp_ppn_i             ({hgatp_ppn_i,vsatp_ppn_i,satp_ppn_i}),
-            .asid_i                 ({vmid_i,vs_asid_i,asid_i}),
+            .asid_i                 ({(ASID_WIDTH)'(vmid_i),vs_asid_i,asid_i}),
             .asid_to_be_flushed_i   ({vmid_to_be_flushed_i,asid_to_be_flushed_i}),
             .vaddr_to_be_flushed_i  ({gpaddr_to_be_flushed_i,vaddr_to_be_flushed_i}),
             .flush_tlb_i            ({flush_tlb_gvma_i,flush_tlb_vvma_i,flush_tlb_i}),

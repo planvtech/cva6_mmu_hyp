@@ -93,24 +93,24 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
 );
     logic [ASID_WIDTH[0]-1:0] dtlb_mmu_asid_i [HYP_EXT:0];
     logic [ASID_WIDTH[0]-1:0] itlb_mmu_asid_i [HYP_EXT:0];
-    logic [ASID_WIDTH[0]-1:0] mmu_asid_to_be_flushed_i [HYP_EXT:0];
-    logic [riscv::VLEN-1:0] mmu_vaddr_to_be_flushed_i [HYP_EXT:0];
-    logic [2:0] mmu_flush_i,mmu_v_st_enbl_i,mmu_v_st_enbl_d;
+    // logic [ASID_WIDTH[0]-1:0] mmu_asid_to_be_flushed_i [HYP_EXT:0];
+    // logic [riscv::VLEN-1:0] mmu_vaddr_to_be_flushed_i [HYP_EXT:0];
+    // logic [2:0] mmu_flush_i,mmu_v_st_enbl_i,mmu_v_st_enbl_d;
 
-    assign mmu_flush_i = flush_tlb_i;
-    assign mmu_v_st_enbl_i = enable_translation_i;
-    assign mmu_v_st_enbl_d = en_ld_st_translation_i;
-    assign mmu_asid_to_be_flushed_i = asid_to_be_flushed_i;
-    assign mmu_vaddr_to_be_flushed_i = vaddr_to_be_flushed_i;
+    // assign mmu_flush_i = flush_tlb_i;
+    // assign mmu_v_st_enbl_i = enable_translation_i;
+    // assign mmu_v_st_enbl_d = en_ld_st_translation_i;
+    // assign mmu_asid_to_be_flushed_i = asid_to_be_flushed_i;
+    // assign mmu_vaddr_to_be_flushed_i = vaddr_to_be_flushed_i;
 
     genvar b;
     generate
         for (b=0; b < HYP_EXT+1; b++) begin  
             assign dtlb_mmu_asid_i[b] = b==0 ? 
-                                        ((mmu_v_st_enbl_i[2*HYP_EXT] || mmu_flush_i[HYP_EXT]) ? asid_i[HYP_EXT] : asid_i[0]): 
+                                        ((en_ld_st_translation_i[2*HYP_EXT] || flush_tlb_i[HYP_EXT]) ? asid_i[HYP_EXT] : asid_i[0]): 
                                         asid_i[HYP_EXT*2];
             assign itlb_mmu_asid_i[b] = b==0 ?
-                                        (mmu_v_st_enbl_i[2*HYP_EXT] ? asid_i[HYP_EXT] : asid_i[0]):
+                                        (enable_translation_i[2*HYP_EXT] ? asid_i[HYP_EXT] : asid_i[0]):
                                         asid_i[HYP_EXT*2];
         end
     endgenerate
@@ -152,30 +152,30 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     logic [HYP_EXT:0][riscv::GPLEN-1:0] ptw_bad_paddr; // PTW guest page fault bad guest physical addr
 
     logic [riscv::VLEN-1:0] update_vaddr;
-    tlb_update_sv39x4_t update_ptw_itlb, update_ptw_dtlb;
+    // tlb_update_sv39x4_t update_ptw_itlb, update_ptw_dtlb;
     tlb_update_cva6_t update_itlb, update_dtlb, update_shared_tlb;
 
     logic        itlb_lu_access;
-    riscv::pte_t itlb_content;
+    // riscv::pte_t itlb_content;
     pte_cva6_t  [HYP_EXT:0]  mmu_itlb_content ;
-    logic        itlb_is_2M;
-    logic        itlb_is_1G;
+    // logic        itlb_is_2M;
+    // logic        itlb_is_1G;
     logic [PT_LEVELS-2:0]               itlb_is_page;
     // data from G-stage translation
-    riscv::pte_t itlb_g_content;
+    // riscv::pte_t itlb_g_content;
     logic        itlb_lu_hit;
     logic [riscv::GPLEN-1:0]  itlb_gpaddr;
     logic [ASID_WIDTH[0]-1:0]    itlb_lu_asid;
 
     logic        dtlb_lu_access;
-    riscv::pte_t dtlb_content;
+    // riscv::pte_t dtlb_content;
     pte_cva6_t  [HYP_EXT:0]  mmu_dtlb_content ;
-    logic        dtlb_is_2M;
-    logic        dtlb_is_1G;
+    // logic        dtlb_is_2M;
+    // logic        dtlb_is_1G;
     logic [PT_LEVELS-2:0]               dtlb_is_page;
     logic [ASID_WIDTH[0]-1:0]    dtlb_lu_asid;
     // data from G-stage translation
-    riscv::pte_t dtlb_g_content;
+    // riscv::pte_t dtlb_g_content;
     logic        dtlb_lu_hit;
     logic [riscv::GPLEN-1:0] dtlb_gpaddr;
 
@@ -196,117 +196,117 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     assign itlb_lu_access = icache_areq_i.fetch_req;
     assign dtlb_lu_access = lsu_req_i;   
 
-    assign itlb_is_2M = itlb_is_page[1];
-    assign itlb_is_1G = itlb_is_page[0];
-    assign dtlb_is_2M = dtlb_is_page[1];
-    assign dtlb_is_1G = dtlb_is_page[0];
+    // assign itlb_is_2M = itlb_is_page[1];
+    // assign itlb_is_1G = itlb_is_page[0];
+    // assign dtlb_is_2M = dtlb_is_page[1];
+    // assign dtlb_is_1G = dtlb_is_page[0];
 
-    assign itlb_content.ppn = mmu_itlb_content[0].ppn;
-    assign itlb_content.rsw = mmu_itlb_content[0].rsw;
-    assign itlb_content.d = mmu_itlb_content[0].d;
-    assign itlb_content.a = mmu_itlb_content[0].a;
-    assign itlb_content.g = mmu_itlb_content[0].g;
-    assign itlb_content.u = mmu_itlb_content[0].u;
-    assign itlb_content.x = mmu_itlb_content[0].x;
-    assign itlb_content.w = mmu_itlb_content[0].w;
-    assign itlb_content.r = mmu_itlb_content[0].r;
-    assign itlb_content.v = mmu_itlb_content[0].v;
+    // assign itlb_content.ppn = mmu_itlb_content[0].ppn;
+    // assign itlb_content.rsw = mmu_itlb_content[0].rsw;
+    // assign itlb_content.d = mmu_itlb_content[0].d;
+    // assign itlb_content.a = mmu_itlb_content[0].a;
+    // assign itlb_content.g = mmu_itlb_content[0].g;
+    // assign itlb_content.u = mmu_itlb_content[0].u;
+    // assign itlb_content.x = mmu_itlb_content[0].x;
+    // assign itlb_content.w = mmu_itlb_content[0].w;
+    // assign itlb_content.r = mmu_itlb_content[0].r;
+    // assign itlb_content.v = mmu_itlb_content[0].v;
 
-    assign itlb_g_content.ppn = mmu_itlb_content[1].ppn;
-    assign itlb_g_content.rsw = mmu_itlb_content[1].rsw;
-    assign itlb_g_content.d = mmu_itlb_content[1].d;
-    assign itlb_g_content.a = mmu_itlb_content[1].a;
-    assign itlb_g_content.g = mmu_itlb_content[1].g;
-    assign itlb_g_content.u = mmu_itlb_content[1].u;
-    assign itlb_g_content.x = mmu_itlb_content[1].x;
-    assign itlb_g_content.w = mmu_itlb_content[1].w;
-    assign itlb_g_content.r = mmu_itlb_content[1].r;
-    assign itlb_g_content.v = mmu_itlb_content[1].v;
+    // assign itlb_g_content.ppn = mmu_itlb_content[1].ppn;
+    // assign itlb_g_content.rsw = mmu_itlb_content[1].rsw;
+    // assign itlb_g_content.d = mmu_itlb_content[1].d;
+    // assign itlb_g_content.a = mmu_itlb_content[1].a;
+    // assign itlb_g_content.g = mmu_itlb_content[1].g;
+    // assign itlb_g_content.u = mmu_itlb_content[1].u;
+    // assign itlb_g_content.x = mmu_itlb_content[1].x;
+    // assign itlb_g_content.w = mmu_itlb_content[1].w;
+    // assign itlb_g_content.r = mmu_itlb_content[1].r;
+    // assign itlb_g_content.v = mmu_itlb_content[1].v;
 
-    assign dtlb_content.ppn = mmu_dtlb_content[0].ppn;
-    assign dtlb_content.rsw = mmu_dtlb_content[0].rsw;
-    assign dtlb_content.d = mmu_dtlb_content[0].d;
-    assign dtlb_content.a = mmu_dtlb_content[0].a;
-    assign dtlb_content.g = mmu_dtlb_content[0].g;
-    assign dtlb_content.u = mmu_dtlb_content[0].u;
-    assign dtlb_content.x = mmu_dtlb_content[0].x;
-    assign dtlb_content.w = mmu_dtlb_content[0].w;
-    assign dtlb_content.r = mmu_dtlb_content[0].r;
-    assign dtlb_content.v = mmu_dtlb_content[0].v;
+    // assign dtlb_content.ppn = mmu_dtlb_content[0].ppn;
+    // assign dtlb_content.rsw = mmu_dtlb_content[0].rsw;
+    // assign dtlb_content.d = mmu_dtlb_content[0].d;
+    // assign dtlb_content.a = mmu_dtlb_content[0].a;
+    // assign dtlb_content.g = mmu_dtlb_content[0].g;
+    // assign dtlb_content.u = mmu_dtlb_content[0].u;
+    // assign dtlb_content.x = mmu_dtlb_content[0].x;
+    // assign dtlb_content.w = mmu_dtlb_content[0].w;
+    // assign dtlb_content.r = mmu_dtlb_content[0].r;
+    // assign dtlb_content.v = mmu_dtlb_content[0].v;
 
-    assign dtlb_g_content.ppn = mmu_dtlb_content[1].ppn;
-    assign dtlb_g_content.rsw = mmu_dtlb_content[1].rsw;
-    assign dtlb_g_content.d = mmu_dtlb_content[1].d;
-    assign dtlb_g_content.a = mmu_dtlb_content[1].a;
-    assign dtlb_g_content.g = mmu_dtlb_content[1].g;
-    assign dtlb_g_content.u = mmu_dtlb_content[1].u;
-    assign dtlb_g_content.x = mmu_dtlb_content[1].x;
-    assign dtlb_g_content.w = mmu_dtlb_content[1].w;
-    assign dtlb_g_content.r = mmu_dtlb_content[1].r;
-    assign dtlb_g_content.v = mmu_dtlb_content[1].v;
+    // assign dtlb_g_content.ppn = mmu_dtlb_content[1].ppn;
+    // assign dtlb_g_content.rsw = mmu_dtlb_content[1].rsw;
+    // assign dtlb_g_content.d = mmu_dtlb_content[1].d;
+    // assign dtlb_g_content.a = mmu_dtlb_content[1].a;
+    // assign dtlb_g_content.g = mmu_dtlb_content[1].g;
+    // assign dtlb_g_content.u = mmu_dtlb_content[1].u;
+    // assign dtlb_g_content.x = mmu_dtlb_content[1].x;
+    // assign dtlb_g_content.w = mmu_dtlb_content[1].w;
+    // assign dtlb_g_content.r = mmu_dtlb_content[1].r;
+    // assign dtlb_g_content.v = mmu_dtlb_content[1].v;
 
-    assign update_itlb.valid = update_ptw_itlb.valid;
-    assign update_itlb.is_page[0][0]=update_ptw_itlb.is_s_1G;
-    assign update_itlb.is_page[0][1]=update_ptw_itlb.is_g_1G;
-    assign update_itlb.is_page[1][0]=update_ptw_itlb.is_s_2M;
-    assign update_itlb.is_page[1][1]=update_ptw_itlb.is_g_2M;
-    assign update_itlb.vpn = update_ptw_itlb.vpn;
-    assign update_itlb.asid[0] = update_ptw_itlb.asid;
-    assign update_itlb.asid[1] = (ASID_WIDTH[0])'(update_ptw_itlb.vmid);
+    // assign update_itlb.valid = update_ptw_itlb.valid;
+    // assign update_itlb.is_page[0][0]=update_ptw_itlb.is_s_1G;
+    // assign update_itlb.is_page[0][1]=update_ptw_itlb.is_g_1G;
+    // assign update_itlb.is_page[1][0]=update_ptw_itlb.is_s_2M;
+    // assign update_itlb.is_page[1][1]=update_ptw_itlb.is_g_2M;
+    // assign update_itlb.vpn = update_ptw_itlb.vpn;
+    // assign update_itlb.asid[0] = update_ptw_itlb.asid;
+    // assign update_itlb.asid[1] = (ASID_WIDTH[0])'(update_ptw_itlb.vmid);
 
-    assign update_itlb.content[0].ppn = update_ptw_itlb.content.ppn;
-    assign update_itlb.content[0].rsw = update_ptw_itlb.content.rsw;
-    assign update_itlb.content[0].d = update_ptw_itlb.content.d;
-    assign update_itlb.content[0].a = update_ptw_itlb.content.a;
-    assign update_itlb.content[0].g = update_ptw_itlb.content.g;
-    assign update_itlb.content[0].u = update_ptw_itlb.content.u;
-    assign update_itlb.content[0].x = update_ptw_itlb.content.x;
-    assign update_itlb.content[0].w = update_ptw_itlb.content.w;
-    assign update_itlb.content[0].r = update_ptw_itlb.content.r;
-    assign update_itlb.content[0].v = update_ptw_itlb.content.v;
+    // assign update_itlb.content[0].ppn = update_ptw_itlb.content.ppn;
+    // assign update_itlb.content[0].rsw = update_ptw_itlb.content.rsw;
+    // assign update_itlb.content[0].d = update_ptw_itlb.content.d;
+    // assign update_itlb.content[0].a = update_ptw_itlb.content.a;
+    // assign update_itlb.content[0].g = update_ptw_itlb.content.g;
+    // assign update_itlb.content[0].u = update_ptw_itlb.content.u;
+    // assign update_itlb.content[0].x = update_ptw_itlb.content.x;
+    // assign update_itlb.content[0].w = update_ptw_itlb.content.w;
+    // assign update_itlb.content[0].r = update_ptw_itlb.content.r;
+    // assign update_itlb.content[0].v = update_ptw_itlb.content.v;
     
     
-    assign update_itlb.content[1].ppn = update_ptw_itlb.g_content.ppn;
-    assign update_itlb.content[1].rsw = update_ptw_itlb.g_content.rsw;
-    assign update_itlb.content[1].d = update_ptw_itlb.g_content.d;
-    assign update_itlb.content[1].a = update_ptw_itlb.g_content.a;
-    assign update_itlb.content[1].g = update_ptw_itlb.g_content.g;
-    assign update_itlb.content[1].u = update_ptw_itlb.g_content.u;
-    assign update_itlb.content[1].x = update_ptw_itlb.g_content.x;
-    assign update_itlb.content[1].w = update_ptw_itlb.g_content.w;
-    assign update_itlb.content[1].r = update_ptw_itlb.g_content.r;
-    assign update_itlb.content[1].v = update_ptw_itlb.g_content.v;
+    // assign update_itlb.content[1].ppn = update_ptw_itlb.g_content.ppn;
+    // assign update_itlb.content[1].rsw = update_ptw_itlb.g_content.rsw;
+    // assign update_itlb.content[1].d = update_ptw_itlb.g_content.d;
+    // assign update_itlb.content[1].a = update_ptw_itlb.g_content.a;
+    // assign update_itlb.content[1].g = update_ptw_itlb.g_content.g;
+    // assign update_itlb.content[1].u = update_ptw_itlb.g_content.u;
+    // assign update_itlb.content[1].x = update_ptw_itlb.g_content.x;
+    // assign update_itlb.content[1].w = update_ptw_itlb.g_content.w;
+    // assign update_itlb.content[1].r = update_ptw_itlb.g_content.r;
+    // assign update_itlb.content[1].v = update_ptw_itlb.g_content.v;
 
-    assign update_dtlb.valid = update_ptw_dtlb.valid;
-    assign update_dtlb.is_page[0][0]=update_ptw_dtlb.is_s_1G;
-    assign update_dtlb.is_page[0][1]=update_ptw_dtlb.is_g_1G;
-    assign update_dtlb.is_page[1][0]=update_ptw_dtlb.is_s_2M;
-    assign update_dtlb.is_page[1][1]=update_ptw_dtlb.is_g_2M;
-    assign update_dtlb.vpn = update_ptw_dtlb.vpn;
-    assign update_dtlb.asid[0] = update_ptw_dtlb.asid;
-    assign update_dtlb.asid[1] = (ASID_WIDTH[0])'(update_ptw_dtlb.vmid);
+    // assign update_dtlb.valid = update_ptw_dtlb.valid;
+    // assign update_dtlb.is_page[0][0]=update_ptw_dtlb.is_s_1G;
+    // assign update_dtlb.is_page[0][1]=update_ptw_dtlb.is_g_1G;
+    // assign update_dtlb.is_page[1][0]=update_ptw_dtlb.is_s_2M;
+    // assign update_dtlb.is_page[1][1]=update_ptw_dtlb.is_g_2M;
+    // assign update_dtlb.vpn = update_ptw_dtlb.vpn;
+    // assign update_dtlb.asid[0] = update_ptw_dtlb.asid;
+    // assign update_dtlb.asid[1] = (ASID_WIDTH[0])'(update_ptw_dtlb.vmid);
     
-    assign update_dtlb.content[0].ppn = update_ptw_dtlb.content.ppn;
-    assign update_dtlb.content[0].rsw = update_ptw_dtlb.content.rsw;
-    assign update_dtlb.content[0].d = update_ptw_dtlb.content.d;
-    assign update_dtlb.content[0].a = update_ptw_dtlb.content.a;
-    assign update_dtlb.content[0].g = update_ptw_dtlb.content.g;
-    assign update_dtlb.content[0].u = update_ptw_dtlb.content.u;
-    assign update_dtlb.content[0].x = update_ptw_dtlb.content.x;
-    assign update_dtlb.content[0].w = update_ptw_dtlb.content.w;
-    assign update_dtlb.content[0].r = update_ptw_dtlb.content.r;
-    assign update_dtlb.content[0].v = update_ptw_dtlb.content.v;
+    // assign update_dtlb.content[0].ppn = update_ptw_dtlb.content.ppn;
+    // assign update_dtlb.content[0].rsw = update_ptw_dtlb.content.rsw;
+    // assign update_dtlb.content[0].d = update_ptw_dtlb.content.d;
+    // assign update_dtlb.content[0].a = update_ptw_dtlb.content.a;
+    // assign update_dtlb.content[0].g = update_ptw_dtlb.content.g;
+    // assign update_dtlb.content[0].u = update_ptw_dtlb.content.u;
+    // assign update_dtlb.content[0].x = update_ptw_dtlb.content.x;
+    // assign update_dtlb.content[0].w = update_ptw_dtlb.content.w;
+    // assign update_dtlb.content[0].r = update_ptw_dtlb.content.r;
+    // assign update_dtlb.content[0].v = update_ptw_dtlb.content.v;
     
-    assign update_dtlb.content[1].ppn = update_ptw_dtlb.g_content.ppn;
-    assign update_dtlb.content[1].rsw = update_ptw_dtlb.g_content.rsw;
-    assign update_dtlb.content[1].d = update_ptw_dtlb.g_content.d;
-    assign update_dtlb.content[1].a = update_ptw_dtlb.g_content.a;
-    assign update_dtlb.content[1].g = update_ptw_dtlb.g_content.g;
-    assign update_dtlb.content[1].u = update_ptw_dtlb.g_content.u;
-    assign update_dtlb.content[1].x = update_ptw_dtlb.g_content.x;
-    assign update_dtlb.content[1].w = update_ptw_dtlb.g_content.w;
-    assign update_dtlb.content[1].r = update_ptw_dtlb.g_content.r;
-    assign update_dtlb.content[1].v = update_ptw_dtlb.g_content.v;
+    // assign update_dtlb.content[1].ppn = update_ptw_dtlb.g_content.ppn;
+    // assign update_dtlb.content[1].rsw = update_ptw_dtlb.g_content.rsw;
+    // assign update_dtlb.content[1].d = update_ptw_dtlb.g_content.d;
+    // assign update_dtlb.content[1].a = update_ptw_dtlb.g_content.a;
+    // assign update_dtlb.content[1].g = update_ptw_dtlb.g_content.g;
+    // assign update_dtlb.content[1].u = update_ptw_dtlb.g_content.u;
+    // assign update_dtlb.content[1].x = update_ptw_dtlb.g_content.x;
+    // assign update_dtlb.content[1].w = update_ptw_dtlb.g_content.w;
+    // assign update_dtlb.content[1].r = update_ptw_dtlb.g_content.r;
+    // assign update_dtlb.content[1].v = update_ptw_dtlb.g_content.v;
 
     cva6_tlb #(
         .pte_cva6_t(pte_cva6_t),
@@ -320,13 +320,13 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     ) i_itlb (
         .clk_i            ( clk_i                      ),
         .rst_ni           ( rst_ni                     ),
-        .flush_i          ( mmu_flush_i                ),
-        .v_st_enbl_i      ( mmu_v_st_enbl_i            ),
+        .flush_i          ( flush_tlb_i                ),
+        .v_st_enbl_i      ( enable_translation_i            ),
         .update_i         ( update_itlb                ),
         .lu_access_i      ( itlb_lu_access             ),
         .lu_asid_i        ( itlb_mmu_asid_i            ),
-        .asid_to_be_flushed_i (mmu_asid_to_be_flushed_i),
-        .vaddr_to_be_flushed_i(mmu_vaddr_to_be_flushed_i),
+        .asid_to_be_flushed_i (asid_to_be_flushed_i),
+        .vaddr_to_be_flushed_i(vaddr_to_be_flushed_i),
         .lu_vaddr_i       ( icache_areq_i.fetch_vaddr  ),
         .lu_content_o     ( mmu_itlb_content           ),
         .lu_gpaddr_o      ( itlb_gpaddr                ),
@@ -346,13 +346,13 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     ) i_dtlb (
         .clk_i            ( clk_i                       ),
         .rst_ni           ( rst_ni                      ),
-        .flush_i          ( mmu_flush_i                 ),
-        .v_st_enbl_i      ( mmu_v_st_enbl_d             ),
+        .flush_i          ( flush_tlb_i                 ),
+        .v_st_enbl_i      ( en_ld_st_translation_i             ),
         .update_i         ( update_dtlb                 ),
         .lu_access_i      ( dtlb_lu_access              ),
         .lu_asid_i        ( dtlb_mmu_asid_i             ),
-        .asid_to_be_flushed_i ( mmu_asid_to_be_flushed_i),
-        .vaddr_to_be_flushed_i(mmu_vaddr_to_be_flushed_i),
+        .asid_to_be_flushed_i ( asid_to_be_flushed_i),
+        .vaddr_to_be_flushed_i(vaddr_to_be_flushed_i),
         .lu_vaddr_i       ( lsu_vaddr_i                 ),
         .lu_content_o     ( mmu_dtlb_content            ),
         .lu_gpaddr_o      ( dtlb_gpaddr                ),
@@ -361,32 +361,36 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     );
 
 
-    cva6_ptw_sv39x4  #(
-        .ASID_WIDTH             ( ASID_WIDTH[0]            ),
-        .VMID_WIDTH             ( VMID_WIDTH            ),
+    cva6_ptw  #(
+        .pte_cva6_t(pte_cva6_t),
+        .tlb_update_cva6_t(tlb_update_cva6_t),
+        .HYP_EXT(HYP_EXT),
+        .ASID_WIDTH             ( ASID_WIDTH            ),
+        .VPN_LEN(VPN_LEN),
+        // .VMID_WIDTH             ( VMID_WIDTH            ),
         .ArianeCfg              ( ArianeCfg             )
     ) i_ptw (
         .clk_i                  ( clk_i                 ),
         .rst_ni                 ( rst_ni                ),
         .ptw_active_o           ( ptw_active            ),
         .walking_instr_o        ( walking_instr         ),
-        .ptw_error_o            ( ptw_error[0]            ),
-        .ptw_error_at_g_st_o    ( ptw_error[1]     ),
-        .ptw_err_at_g_int_st_o  ( ptw_error[2]   ),
+        .ptw_error_o            ( ptw_error             ),
+        // .ptw_error_at_g_st_o    ( ptw_error[1]     ),
+        // .ptw_err_at_g_int_st_o  ( ptw_error[2]   ),
         .ptw_access_exception_o ( ptw_access_exception  ),
-        .enable_translation_i   ( mmu_v_st_enbl_i[0]  ),
-        .enable_g_translation_i ( mmu_v_st_enbl_i[1]),
-        .v_i                    ( mmu_v_st_enbl_i[2]),
-        .en_ld_st_translation_i ( mmu_v_st_enbl_d[0]),
-        .en_ld_st_g_translation_i( mmu_v_st_enbl_d[1]),
-        .ld_st_v_i              (mmu_v_st_enbl_d[2]),
-        .asid_i                 (asid_i[0]),
-        .vmid_i                 (asid_i[2]),
-        .vs_asid_i              (asid_i[1]),
+        .enable_translation_i   ( enable_translation_i  ),
+        // .enable_g_translation_i ( enable_translation_i[1]),
+        // .v_i                    ( enable_translation_i[2]),
+        .en_ld_st_translation_i ( en_ld_st_translation_i),
+        // .en_ld_st_g_translation_i( en_ld_st_translation_i[1]),
+        // .ld_st_v_i              (en_ld_st_translation_i[2]),
+        .asid_i                 (asid_i),
+        // .vmid_i                 (asid_i[2]),
+        // .vs_asid_i              (asid_i[1]),
 
         .update_vaddr_o         ( update_vaddr          ),
-        .itlb_update_o          ( update_ptw_itlb       ),
-        .dtlb_update_o          ( update_ptw_dtlb       ),
+        .itlb_update_o          ( update_itlb       ),
+        .dtlb_update_o          ( update_dtlb       ),
 
         .itlb_access_i          ( itlb_lu_access        ),
         .itlb_hit_i             ( itlb_lu_hit           ),
@@ -399,11 +403,11 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
 
         .req_port_i             ( req_port_i            ),
         .req_port_o             ( req_port_o            ),
-        .mxr_i                  (mxr_i[0]               ),
-        .vmxr_i                 (mxr_i[1]               ),
-        .satp_ppn_i             (satp_ppn_i[0]          ),
-        .vsatp_ppn_i             (satp_ppn_i[1]          ),
-        .hgatp_ppn_i             (satp_ppn_i[2]          ),
+        .mxr_i                  (mxr_i                  ),
+        // .vmxr_i                 (mxr_i[1]               ),
+        .satp_ppn_i             (satp_ppn_i             ),
+        // .vsatp_ppn_i             (satp_ppn_i[1]          ),
+        // .hgatp_ppn_i             (satp_ppn_i[2]          ),
         .pmpcfg_i,
         .pmpaddr_i,
         // .bad_paddr_o            ( ptw_bad_paddr[0])
@@ -439,8 +443,8 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
 
     assign icache_areq_o.fetch_paddr    [11:0] = icache_areq_i.fetch_vaddr[11:0];
     assign icache_areq_o.fetch_paddr [riscv::PLEN-1:PPNWMin+1]   = //
-                              (|mmu_v_st_enbl_i[HYP_EXT:0]) ? //
-                              (mmu_v_st_enbl_i[HYP_EXT] ? mmu_itlb_content[HYP_EXT].ppn[riscv::PPNW-1:(riscv::PPNW - (riscv::PLEN - PPNWMin-1))] :
+                              (|enable_translation_i[HYP_EXT:0]) ? //
+                              (enable_translation_i[HYP_EXT] ? mmu_itlb_content[HYP_EXT].ppn[riscv::PPNW-1:(riscv::PPNW - (riscv::PLEN - PPNWMin-1))] :
                               mmu_itlb_content[0].ppn[riscv::PPNW-1:(riscv::PPNW - (riscv::PLEN - PPNWMin-1))] ): //
                               (riscv::PLEN-PPNWMin-1)'(icache_areq_i.fetch_vaddr[((riscv::PLEN > riscv::VLEN) ? riscv::VLEN : riscv::PLEN )-1:PPNWMin+1]);
     genvar a;
@@ -448,8 +452,8 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     
         for (a=0; a < PT_LEVELS-1; a++) begin  
         assign icache_areq_o.fetch_paddr [PPNWMin-((VPN_LEN/PT_LEVELS)*(a)):PPNWMin-((VPN_LEN/PT_LEVELS)*(a+1))+1] = //
-                            (|mmu_v_st_enbl_i[HYP_EXT:0] && (|itlb_is_page[a:0]==0)) ? //
-                            (mmu_v_st_enbl_i[HYP_EXT] ? mmu_itlb_content[HYP_EXT].ppn  [(riscv::PPNW - (riscv::PLEN - PPNWMin-1)-((VPN_LEN/PT_LEVELS)*(a))-1):(riscv::PPNW - (riscv::PLEN - PPNWMin-1)-((VPN_LEN/PT_LEVELS)*(a+1)))]:
+                            (|enable_translation_i[HYP_EXT:0] && (|itlb_is_page[a:0]==0)) ? //
+                            (enable_translation_i[HYP_EXT] ? mmu_itlb_content[HYP_EXT].ppn  [(riscv::PPNW - (riscv::PLEN - PPNWMin-1)-((VPN_LEN/PT_LEVELS)*(a))-1):(riscv::PPNW - (riscv::PLEN - PPNWMin-1)-((VPN_LEN/PT_LEVELS)*(a+1)))]:
                             mmu_itlb_content[0].ppn  [(riscv::PPNW - (riscv::PLEN - PPNWMin-1)-((VPN_LEN/PT_LEVELS)*(a))-1):(riscv::PPNW - (riscv::PLEN - PPNWMin-1)-((VPN_LEN/PT_LEVELS)*(a+1)))]) : //
                             icache_areq_i.fetch_vaddr[PPNWMin-((VPN_LEN/PT_LEVELS)*(a)):PPNWMin-((VPN_LEN/PT_LEVELS)*(a+1))+1];
         end
@@ -466,16 +470,16 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
         // 2. We got an access error because of insufficient permissions -> throw an access exception
         icache_areq_o.fetch_exception      = '0;
         // Check whether we are allowed to access this memory region from a fetch perspective
-        iaccess_err[0]   = icache_areq_i.fetch_req && mmu_v_st_enbl_i[0] && (((priv_lvl_i == riscv::PRIV_LVL_U) && ~mmu_itlb_content[0].u)
+        iaccess_err[0]   = icache_areq_i.fetch_req && enable_translation_i[0] && (((priv_lvl_i == riscv::PRIV_LVL_U) && ~mmu_itlb_content[0].u)
                                                     || ((priv_lvl_i == riscv::PRIV_LVL_S) && mmu_itlb_content[0].u));
 
         if(HYP_EXT==1)
-            iaccess_err[HYP_EXT] = icache_areq_i.fetch_req && mmu_v_st_enbl_i[HYP_EXT] && !mmu_itlb_content[HYP_EXT].u;
+            iaccess_err[HYP_EXT] = icache_areq_i.fetch_req && enable_translation_i[HYP_EXT] && !mmu_itlb_content[HYP_EXT].u;
         // MMU enabled: address from TLB, request delayed until hit. Error when TLB
         // hit and no access right or TLB hit and translated address not valid (e.g.
         // AXI decode error), or when PTW performs walk due to ITLB miss and raises
         // an error.
-        if ((|mmu_v_st_enbl_i[HYP_EXT:0])) begin
+        if ((|enable_translation_i[HYP_EXT:0])) begin
             // we work with SV39 or SV32, so if VM is enabled, check that all bits [riscv::VLEN-1:riscv::SV-1] are equal
             if (icache_areq_i.fetch_req && !((&icache_areq_i.fetch_vaddr[riscv::VLEN-1:riscv::SV-1]) == 1'b1 || (|icache_areq_i.fetch_vaddr[riscv::VLEN-1:riscv::SV-1]) == 1'b0)) begin
                 if(HYP_EXT==1) begin
@@ -484,7 +488,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                         {{riscv::XLEN-riscv::VLEN{1'b0}}, icache_areq_i.fetch_vaddr},
                         {riscv::GPLEN{1'b0}},
                         {{riscv::XLEN{1'b0}}},
-                        mmu_v_st_enbl_i[HYP_EXT*2],
+                        enable_translation_i[HYP_EXT*2],
                         1'b1
                     };
                 end
@@ -524,7 +528,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                         {{riscv::XLEN-riscv::VLEN{1'b0}}, icache_areq_i.fetch_vaddr},
                         itlb_gpaddr[riscv::GPLEN-1:0],
                         {riscv::XLEN{1'b0}},
-                        mmu_v_st_enbl_i[HYP_EXT*2],
+                        enable_translation_i[HYP_EXT*2],
                         1'b1
                     };
                     // we got an access error
@@ -536,7 +540,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                             {{riscv::XLEN-riscv::VLEN{1'b0}}, icache_areq_i.fetch_vaddr},
                             {riscv::GPLEN{1'b0}},
                             {riscv::XLEN{1'b0}},
-                            mmu_v_st_enbl_i[HYP_EXT*2],
+                            enable_translation_i[HYP_EXT*2],
                             1'b1
                         };
                     end
@@ -555,7 +559,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                             {{riscv::XLEN-riscv::PLEN{1'b0}}, icache_areq_i.fetch_vaddr},
                             {riscv::GPLEN{1'b0}},
                             {riscv::XLEN{1'b0}},
-                            mmu_v_st_enbl_i[HYP_EXT*2],
+                            enable_translation_i[HYP_EXT*2],
                             1'b1
                         };
                     end
@@ -579,7 +583,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                             {{riscv::XLEN-riscv::VLEN{1'b0}}, update_vaddr},
                             ptw_bad_paddr[HYP_EXT][riscv::GPLEN-1:0],
                             (ptw_error[HYP_EXT*2] ? (riscv::IS_XLEN64 ? riscv::READ_64_PSEUDOINSTRUCTION : riscv::READ_32_PSEUDOINSTRUCTION) : {riscv::XLEN{1'b0}}),
-                            mmu_v_st_enbl_i[2*HYP_EXT],
+                            enable_translation_i[2*HYP_EXT],
                             1'b1
                         };
                     end else begin
@@ -589,7 +593,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                                 {{riscv::XLEN-riscv::VLEN{1'b0}}, update_vaddr},
                                 {riscv::GPLEN{1'b0}},
                                 {riscv::XLEN{1'b0}},
-                                mmu_v_st_enbl_i[2*HYP_EXT],
+                                enable_translation_i[2*HYP_EXT],
                                 1'b1
                             };
                         end
@@ -608,7 +612,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                             {{riscv::XLEN-riscv::VLEN{1'b0}}, update_vaddr},
                             {riscv::GPLEN{1'b0}},
                             {riscv::XLEN{1'b0}},
-                            mmu_v_st_enbl_i[HYP_EXT*2],
+                            enable_translation_i[HYP_EXT*2],
                             1'b1
                         };
                     end
@@ -622,14 +626,14 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
         end
         // if it didn't match any execute region throw an `Instruction Access Fault`
         // or: if we are not translating, check PMPs immediately on the paddr
-        if ((!match_any_execute_region && !ptw_error[0]) || (!(|mmu_v_st_enbl_i[HYP_EXT:0]) && !pmp_instr_allow)) begin
+        if ((!match_any_execute_region && !ptw_error[0]) || (!(|enable_translation_i[HYP_EXT:0]) && !pmp_instr_allow)) begin
             if(HYP_EXT==1) begin
                 icache_areq_o.fetch_exception = {
                     riscv::INSTR_ACCESS_FAULT,
                     {riscv::XLEN '(icache_areq_o.fetch_paddr)},
                     {riscv::GPLEN{1'b0}},
                     {riscv::XLEN{1'b0}},
-                    mmu_v_st_enbl_i[HYP_EXT*2],
+                    enable_translation_i[HYP_EXT*2],
                     1'b1
                 };
             end 
@@ -678,7 +682,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     // logic        dtlb_is_1G_n,    dtlb_is_1G_q;
 
     // check if we need to do translation or if we are always ready (e.g.: we are not translating anything)
-    assign lsu_dtlb_hit_o = (|mmu_v_st_enbl_d[HYP_EXT:0]) ? dtlb_lu_hit :  1'b1;
+    assign lsu_dtlb_hit_o = (|en_ld_st_translation_i[HYP_EXT:0]) ? dtlb_lu_hit :  1'b1;
 
     // Wires to PMP checks
     riscv::pmp_access_t pmp_access_type;
@@ -686,14 +690,14 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
 
     assign lsu_paddr_o    [11:0] = lsu_vaddr_q[0][11:0];
     assign lsu_paddr_o [riscv::PLEN-1:PPNWMin+1]   = 
-                            (|mmu_v_st_enbl_d[HYP_EXT:0] && !misaligned_ex_q.valid) ? //
-                            (mmu_v_st_enbl_d[HYP_EXT] ? dtlb_pte_q[HYP_EXT].ppn[riscv::PPNW-1:(riscv::PPNW - (riscv::PLEN - PPNWMin-1))]:
+                            (|en_ld_st_translation_i[HYP_EXT:0] && !misaligned_ex_q.valid) ? //
+                            (en_ld_st_translation_i[HYP_EXT] ? dtlb_pte_q[HYP_EXT].ppn[riscv::PPNW-1:(riscv::PPNW - (riscv::PLEN - PPNWMin-1))]:
                             dtlb_pte_q[0].ppn[riscv::PPNW-1:(riscv::PPNW - (riscv::PLEN - PPNWMin-1))] ): // 
                             (riscv::PLEN-PPNWMin-1)'(lsu_vaddr_q[0][((riscv::PLEN > riscv::VLEN) ? riscv::VLEN : riscv::PLEN )-1:PPNWMin+1]);
 
     assign lsu_dtlb_ppn_o [11:0]   = 
-                            (|mmu_v_st_enbl_d[HYP_EXT:0] && !misaligned_ex_q.valid) ? //
-                            (mmu_v_st_enbl_d[HYP_EXT] ? mmu_dtlb_content[HYP_EXT].ppn[11:0]:
+                            (|en_ld_st_translation_i[HYP_EXT:0] && !misaligned_ex_q.valid) ? //
+                            (en_ld_st_translation_i[HYP_EXT] ? mmu_dtlb_content[HYP_EXT].ppn[11:0]:
                             mmu_dtlb_content[0].ppn[11:0]) : // 
                             lsu_vaddr_n[0][23:12];
 
@@ -702,22 +706,22 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
         
         for (i=0; i < PT_LEVELS-1; i++) begin  
             assign lsu_paddr_o   [PPNWMin-((VPN_LEN/PT_LEVELS)*(i)):PPNWMin-((VPN_LEN/PT_LEVELS)*(i+1))+1] = //
-                                (|mmu_v_st_enbl_d[HYP_EXT:0]  && !misaligned_ex_q.valid && (|dtlb_is_page_q[i:0]==0)) ? //
-                                (mmu_v_st_enbl_d[HYP_EXT] ? dtlb_pte_q[HYP_EXT].ppn  [(riscv::PPNW - (riscv::PLEN - PPNWMin-1)-((VPN_LEN/PT_LEVELS)*(i))-1):(riscv::PPNW - (riscv::PLEN - PPNWMin-1)-((VPN_LEN/PT_LEVELS)*(i+1)))]:
+                                (|en_ld_st_translation_i[HYP_EXT:0]  && !misaligned_ex_q.valid && (|dtlb_is_page_q[i:0]==0)) ? //
+                                (en_ld_st_translation_i[HYP_EXT] ? dtlb_pte_q[HYP_EXT].ppn  [(riscv::PPNW - (riscv::PLEN - PPNWMin-1)-((VPN_LEN/PT_LEVELS)*(i))-1):(riscv::PPNW - (riscv::PLEN - PPNWMin-1)-((VPN_LEN/PT_LEVELS)*(i+1)))]:
                                 dtlb_pte_q[0].ppn  [(riscv::PPNW - (riscv::PLEN - PPNWMin-1)-((VPN_LEN/PT_LEVELS)*(i))-1):(riscv::PPNW - (riscv::PLEN - PPNWMin-1)-((VPN_LEN/PT_LEVELS)*(i+1)))] ): //
                                 lsu_vaddr_q[0][PPNWMin-((VPN_LEN/PT_LEVELS)*(i)):PPNWMin-((VPN_LEN/PT_LEVELS)*(i+1))+1];
 
             assign lsu_dtlb_ppn_o[PPNWMin-((VPN_LEN/PT_LEVELS)*(i)):PPNWMin-((VPN_LEN/PT_LEVELS)*(i+1))+1] = //
-                                (|mmu_v_st_enbl_d[HYP_EXT:0]  && !misaligned_ex_q.valid && (|dtlb_is_page_q[i:0]==0)) ? //
-                                (mmu_v_st_enbl_d[HYP_EXT] ? mmu_dtlb_content[HYP_EXT].ppn[PPNWMin-((VPN_LEN/PT_LEVELS)*(i)):PPNWMin-((VPN_LEN/PT_LEVELS)*(i+1))+1]:
+                                (|en_ld_st_translation_i[HYP_EXT:0]  && !misaligned_ex_q.valid && (|dtlb_is_page_q[i:0]==0)) ? //
+                                (en_ld_st_translation_i[HYP_EXT] ? mmu_dtlb_content[HYP_EXT].ppn[PPNWMin-((VPN_LEN/PT_LEVELS)*(i)):PPNWMin-((VPN_LEN/PT_LEVELS)*(i+1))+1]:
                                 mmu_dtlb_content[0].ppn[PPNWMin-((VPN_LEN/PT_LEVELS)*(i)):PPNWMin-((VPN_LEN/PT_LEVELS)*(i+1))+1] ): //
-                                (|mmu_v_st_enbl_d[HYP_EXT:0]  && !misaligned_ex_q.valid && (|dtlb_is_page_q[i:0]!=0)?
+                                (|en_ld_st_translation_i[HYP_EXT:0]  && !misaligned_ex_q.valid && (|dtlb_is_page_q[i:0]!=0)?
                                 lsu_vaddr_n[0][PPNWMin-((VPN_LEN/PT_LEVELS)*(i)):PPNWMin-((VPN_LEN/PT_LEVELS)*(i+1))+1]://
                                 (VPN_LEN/PT_LEVELS)'(lsu_vaddr_n[0][((riscv::PLEN > riscv::VLEN) ? riscv::VLEN -1 : (24 + (VPN_LEN/PT_LEVELS)*(PT_LEVELS-i-1) ) -1): (riscv::PLEN > riscv::VLEN) ? 24 :24 + (VPN_LEN/PT_LEVELS)*(PT_LEVELS-i-2)]));
         end
         if(riscv::IS_XLEN64) begin
-            assign lsu_dtlb_ppn_o[riscv::PPNW-1:PPNWMin+1] = (|mmu_v_st_enbl_d[HYP_EXT:0] && !misaligned_ex_q.valid) ? 
-                                (mmu_v_st_enbl_d[HYP_EXT] ? mmu_dtlb_content[HYP_EXT].ppn[riscv::PPNW-1:PPNWMin+1]:
+            assign lsu_dtlb_ppn_o[riscv::PPNW-1:PPNWMin+1] = (|en_ld_st_translation_i[HYP_EXT:0] && !misaligned_ex_q.valid) ? 
+                                (en_ld_st_translation_i[HYP_EXT] ? mmu_dtlb_content[HYP_EXT].ppn[riscv::PPNW-1:PPNWMin+1]:
                                 mmu_dtlb_content[0].ppn[riscv::PPNW-1:PPNWMin+1] ): 
                                 lsu_vaddr_n[0][riscv::PLEN-1:PPNWMin+1] ;
         end
@@ -757,14 +761,14 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
 
         // Check if the User flag is set, then we may only access it in supervisor mode
         // if SUM is enabled
-        daccess_err[0] = mmu_v_st_enbl_d[0] &&
-                        ((ld_st_priv_lvl_i == riscv::PRIV_LVL_S && (mmu_v_st_enbl_d[HYP_EXT*2] ? !sum_i[HYP_EXT] : !sum_i[0] ) && dtlb_pte_q[0].u) || // SUM is not set and we are trying to access a user page in supervisor mode
+        daccess_err[0] = en_ld_st_translation_i[0] &&
+                        ((ld_st_priv_lvl_i == riscv::PRIV_LVL_S && (en_ld_st_translation_i[HYP_EXT*2] ? !sum_i[HYP_EXT] : !sum_i[0] ) && dtlb_pte_q[0].u) || // SUM is not set and we are trying to access a user page in supervisor mode
                         (ld_st_priv_lvl_i == riscv::PRIV_LVL_U && !dtlb_pte_q[0].u));
         
         if(HYP_EXT==1)
-            daccess_err[HYP_EXT] = mmu_v_st_enbl_d[HYP_EXT] && !dtlb_pte_q[1].u;
+            daccess_err[HYP_EXT] = en_ld_st_translation_i[HYP_EXT] && !dtlb_pte_q[1].u;
         // translation is enabled and no misaligned exception occurred
-        if ((|mmu_v_st_enbl_d[HYP_EXT:0]) && !misaligned_ex_q.valid) begin
+        if ((|en_ld_st_translation_i[HYP_EXT:0]) && !misaligned_ex_q.valid) begin
             lsu_valid_o = 1'b0;
             // // 4K page
             // lsu_paddr_o = {(mmu_v_st_enbl_d[1]) ? dtlb_pte_q[1].ppn : dtlb_pte_q[0].ppn, lsu_vaddr_q[0][11:0]};
@@ -793,23 +797,23 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                 if (lsu_is_store_q) begin
                     // check if the page is write-able and we are not violating privileges
                     // also check if the dirty flag is set
-                    if(HYP_EXT==1 && mmu_v_st_enbl_d[HYP_EXT] && (!dtlb_pte_q[HYP_EXT].w || daccess_err[HYP_EXT] || !dtlb_pte_q[HYP_EXT].d)) begin
+                    if(HYP_EXT==1 && en_ld_st_translation_i[HYP_EXT] && (!dtlb_pte_q[HYP_EXT].w || daccess_err[HYP_EXT] || !dtlb_pte_q[HYP_EXT].d)) begin
                         lsu_exception_o = {
                             riscv::STORE_GUEST_PAGE_FAULT,
                             {{riscv::XLEN-riscv::VLEN{lsu_vaddr_q[0][riscv::VLEN-1]}},lsu_vaddr_q[0]},
                             lsu_vaddr_q[1][riscv::GPLEN-1:0],
                             {riscv::XLEN{1'b0}},
-                            mmu_v_st_enbl_d[HYP_EXT*2],
+                            en_ld_st_translation_i[HYP_EXT*2],
                             1'b1
                         };
-                    end else if (mmu_v_st_enbl_d[0] && (!dtlb_pte_q[0].w || daccess_err[0] || !dtlb_pte_q[0].d)) begin
+                    end else if (en_ld_st_translation_i[0] && (!dtlb_pte_q[0].w || daccess_err[0] || !dtlb_pte_q[0].d)) begin
                         if(HYP_EXT==1) begin
                             lsu_exception_o = {
                                 riscv::STORE_PAGE_FAULT,
                                 {{riscv::XLEN-riscv::VLEN{lsu_vaddr_q[0][riscv::VLEN-1]}},lsu_vaddr_q[0]},
                                 {riscv::GPLEN{1'b0}},
                                 lsu_tinst_q,
-                                mmu_v_st_enbl_d[HYP_EXT*2],
+                                en_ld_st_translation_i[HYP_EXT*2],
                                 1'b1
                             };
                         end
@@ -828,7 +832,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                                 {riscv::XLEN '(lsu_paddr_o)},
                                 {riscv::GPLEN{1'b0}},
                                 lsu_tinst_q,
-                                mmu_v_st_enbl_d[HYP_EXT*2],
+                                en_ld_st_translation_i[HYP_EXT*2],
                                 1'b1
                             };
                         end
@@ -847,7 +851,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                             {{riscv::XLEN-riscv::VLEN{lsu_vaddr_q[0][riscv::VLEN-1]}},lsu_vaddr_q[0]},
                             lsu_vaddr_q[1][riscv::GPLEN-1:0],
                             {riscv::XLEN{1'b0}},
-                            mmu_v_st_enbl_d[HYP_EXT*2],
+                            en_ld_st_translation_i[HYP_EXT*2],
                             1'b1
                         };
                     // check for sufficient access privileges - throw a page fault if necessary
@@ -858,7 +862,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                                 {{riscv::XLEN-riscv::VLEN{lsu_vaddr_q[0][riscv::VLEN-1]}},lsu_vaddr_q[0]},
                                 {riscv::GPLEN{1'b0}},
                                 lsu_tinst_q,
-                                mmu_v_st_enbl_d[HYP_EXT*2],
+                                en_ld_st_translation_i[HYP_EXT*2],
                                 1'b1
                             };
                         end
@@ -877,7 +881,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                                 {{riscv::XLEN-riscv::VLEN{lsu_vaddr_q[0][riscv::VLEN-1]}},lsu_vaddr_q[0]},
                                 {riscv::GPLEN{1'b0}},
                                 lsu_tinst_q,
-                                mmu_v_st_enbl_d[HYP_EXT*2],
+                                en_ld_st_translation_i[HYP_EXT*2],
                                 1'b1
                             };
                         end
@@ -907,7 +911,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                                 {{riscv::XLEN-riscv::VLEN{lsu_vaddr_q[0][riscv::VLEN-1]}},update_vaddr},
                                 ptw_bad_paddr[HYP_EXT][riscv::GPLEN-1:0],
                                 (ptw_error[HYP_EXT*2] ? (riscv::IS_XLEN64 ? riscv::READ_64_PSEUDOINSTRUCTION : riscv::READ_32_PSEUDOINSTRUCTION) : {riscv::XLEN{1'b0}}),
-                                mmu_v_st_enbl_d[HYP_EXT*2],
+                                en_ld_st_translation_i[HYP_EXT*2],
                                 1'b1
                             };
                         end else begin
@@ -917,7 +921,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                                     {{riscv::XLEN-riscv::VLEN{lsu_vaddr_q[0][riscv::VLEN-1]}},update_vaddr},
                                     {riscv::GPLEN{1'b0}},
                                     lsu_tinst_q,
-                                    mmu_v_st_enbl_d[HYP_EXT*2],
+                                    en_ld_st_translation_i[HYP_EXT*2],
                                     1'b1
                                 };
                             end
@@ -936,7 +940,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                                 {{riscv::XLEN-riscv::VLEN{lsu_vaddr_q[0][riscv::VLEN-1]}},update_vaddr},
                                 ptw_bad_paddr[HYP_EXT][riscv::GPLEN-1:0],
                                 (ptw_error[HYP_EXT*2] ? (riscv::IS_XLEN64 ? riscv::READ_64_PSEUDOINSTRUCTION : riscv::READ_32_PSEUDOINSTRUCTION) : {riscv::XLEN{1'b0}}),
-                                mmu_v_st_enbl_d[HYP_EXT*2],
+                                en_ld_st_translation_i[HYP_EXT*2],
                                 1'b1
                             };
                         end else begin
@@ -946,7 +950,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                                     {{riscv::XLEN-riscv::VLEN{lsu_vaddr_q[0][riscv::VLEN-1]}},update_vaddr},
                                     {riscv::GPLEN{1'b0}},
                                     lsu_tinst_q,
-                                    mmu_v_st_enbl_d[HYP_EXT*2],
+                                    en_ld_st_translation_i[HYP_EXT*2],
                                     1'b1
                                 };
                             end
@@ -971,7 +975,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                             {{riscv::XLEN-riscv::VLEN{lsu_vaddr_q[0][riscv::VLEN-1]}},update_vaddr},
                             {riscv::GPLEN{1'b0}},
                             lsu_tinst_q,
-                            mmu_v_st_enbl_d[HYP_EXT*2],
+                            en_ld_st_translation_i[HYP_EXT*2],
                             1'b1
                         };
                     end
@@ -990,7 +994,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                         {{riscv::XLEN-riscv::VLEN{lsu_vaddr_q[0][riscv::VLEN-1]}},update_vaddr},
                         {riscv::GPLEN{1'b0}},
                         lsu_tinst_q,
-                        mmu_v_st_enbl_d[HYP_EXT*2],
+                        en_ld_st_translation_i[HYP_EXT*2],
                         1'b1
                     };
                 end
@@ -1004,7 +1008,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                         {{riscv::XLEN-riscv::VLEN{lsu_vaddr_q[0][riscv::VLEN-1]}},update_vaddr},
                         {riscv::GPLEN{1'b0}},
                         lsu_tinst_q,
-                        mmu_v_st_enbl_d[HYP_EXT*2],
+                        en_ld_st_translation_i[HYP_EXT*2],
                         1'b1
                     };
                 end
