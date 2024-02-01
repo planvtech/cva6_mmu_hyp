@@ -25,7 +25,8 @@ module cva6_ptw import ariane_pkg::*; #(
     parameter int unsigned HYP_EXT = 0,
     parameter int unsigned ASID_WIDTH [HYP_EXT:0] = {1},
     parameter int unsigned VPN_LEN = 1,
-    parameter ariane_pkg::ariane_cfg_t ArianeCfg = ariane_pkg::ArianeDefaultConfig
+    parameter ariane_pkg::ariane_cfg_t ArianeCfg = ariane_pkg::ArianeDefaultConfig,
+    parameter int unsigned PT_LEVELS = 1
 ) (
     input  logic                    clk_i,                  // Clock
     input  logic                    rst_ni,                 // Asynchronous reset active low
@@ -107,9 +108,7 @@ module cva6_ptw import ariane_pkg::*; #(
     } state_q, state_d;
 
     // SV39 defines three levels of page tables
-    enum logic [1:0] {
-        LVL1, LVL2, LVL3
-    } ptw_lvl_q, ptw_lvl_n, gptw_lvl_n, gptw_lvl_q;
+    logic [HYP_EXT:0][PT_LEVELS-2:0] ptw_lvl_q, ptw_lvl_n;  //, gptw_lvl_n, gptw_lvl_q;
 
     // define 3 PTW stages
     // S_STAGE -> S/VS-stage normal translation controlled by the satp/vsatp CSRs
@@ -159,38 +158,48 @@ module cva6_ptw import ariane_pkg::*; #(
         itlb_update_o.vpn = VPN_LEN'(vaddr_q[riscv::SV+HYP_EXT*2-1:12]);
         dtlb_update_o.vpn = VPN_LEN'(vaddr_q[riscv::SV+HYP_EXT*2-1:12]);
         // update the correct page table level
-        if(&enable_translation_i[HYP_EXT:0]) begin
-            itlb_update_o.is_page[1][0] = (gptw_lvl_q == LVL2);
-            itlb_update_o.is_page[0][0] = (gptw_lvl_q == LVL1);
-            itlb_update_o.is_page[1][1] = (ptw_lvl_q == LVL2);
-            itlb_update_o.is_page[0][1] = (ptw_lvl_q == LVL1);
-        end else if(enable_translation_i[0]) begin
-            itlb_update_o.is_page[1][0] = (ptw_lvl_q == LVL2);
-            itlb_update_o.is_page[0][0] = (ptw_lvl_q == LVL1);
-            itlb_update_o.is_page[1][1] = 1'b0;
-            itlb_update_o.is_page[0][1] = 1'b0;
-        end else begin
-            itlb_update_o.is_page[1][0] = 1'b0;
-            itlb_update_o.is_page[0][0] = 1'b0;
-            itlb_update_o.is_page[1][1] = (ptw_lvl_q == LVL2);
-            itlb_update_o.is_page[0][1] = (ptw_lvl_q == LVL1);
-        end
+        for (int unsigned x=0; x < PT_LEVELS-1; x++) begin
+            for (int unsigned y=0; y < HYP_EXT+1; y++) begin
+                if(&enable_translation_i[HYP_EXT:0] && HYP_EXT==1) begin
+                    // itlb_update_o.is_page[1][0] = (ptw_lvl_q[HYP_EXT] == LVL2);
+                    // itlb_update_o.is_page[0][0] = (ptw_lvl_q[HYP_EXT] == LVL1);
+                    // itlb_update_o.is_page[1][1] = (ptw_lvl_q[0] == LVL2);
+                    // itlb_update_o.is_page[0][1] = (ptw_lvl_q[0] == LVL1);
+                    itlb_update_o.is_page[x][y] = (ptw_lvl_q[y==HYP_EXT? 0 : 1] == x);
+                end else if(enable_translation_i[0]) begin
+                    // itlb_update_o.is_page[1][0] = (ptw_lvl_q[0] == LVL2);
+                    // itlb_update_o.is_page[0][0] = (ptw_lvl_q[0] == LVL1);
+                    // itlb_update_o.is_page[1][1] = 1'b0;
+                    // itlb_update_o.is_page[0][1] = 1'b0;
+                    itlb_update_o.is_page[x][y] = y==0 ? (ptw_lvl_q[0]== x) : 1'b0;
+                end else begin
+                    // itlb_update_o.is_page[1][0] = 1'b0;
+                    // itlb_update_o.is_page[0][0] = 1'b0;
+                    // itlb_update_o.is_page[1][1] = (ptw_lvl_q[0] == LVL2);
+                    // itlb_update_o.is_page[0][1] = (ptw_lvl_q[0] == LVL1);
+                    itlb_update_o.is_page[x][y] = y!=0 ? (ptw_lvl_q[0]== x) : 1'b0;
+                end
 
-        if(&en_ld_st_translation_i[HYP_EXT:0]) begin
-            dtlb_update_o.is_page[1][0] = (gptw_lvl_q == LVL2);
-            dtlb_update_o.is_page[0][0] = (gptw_lvl_q == LVL1);
-            dtlb_update_o.is_page[1][1] = (ptw_lvl_q == LVL2);
-            dtlb_update_o.is_page[0][1] = (ptw_lvl_q == LVL1);
-        end else if(en_ld_st_translation_i[0]) begin
-            dtlb_update_o.is_page[1][0] = (ptw_lvl_q == LVL2);
-            dtlb_update_o.is_page[0][0] = (ptw_lvl_q == LVL1);
-            dtlb_update_o.is_page[1][1] = 1'b0;
-            dtlb_update_o.is_page[0][1] = 1'b0;
-        end else begin
-            dtlb_update_o.is_page[1][0] = 1'b0;
-            dtlb_update_o.is_page[0][0] = 1'b0;
-            dtlb_update_o.is_page[1][1] = (ptw_lvl_q == LVL2);
-            dtlb_update_o.is_page[0][1] = (ptw_lvl_q == LVL1);
+                if(&en_ld_st_translation_i[HYP_EXT:0]) begin
+                    // dtlb_update_o.is_page[1][0] = (ptw_lvl_q[HYP_EXT] == LVL2);
+                    // dtlb_update_o.is_page[0][0] = (ptw_lvl_q[HYP_EXT] == LVL1);
+                    // dtlb_update_o.is_page[1][1] = (ptw_lvl_q[0] == LVL2);
+                    // dtlb_update_o.is_page[0][1] = (ptw_lvl_q[0] == LVL1);
+                    dtlb_update_o.is_page[x][y] = (ptw_lvl_q[y==HYP_EXT? 0 : 1] == x);
+                end else if(en_ld_st_translation_i[0]) begin
+                    // dtlb_update_o.is_page[1][0] = (ptw_lvl_q[0] == LVL2);
+                    // dtlb_update_o.is_page[0][0] = (ptw_lvl_q[0] == LVL1);
+                    // dtlb_update_o.is_page[1][1] = 1'b0;
+                    // dtlb_update_o.is_page[0][1] = 1'b0;
+                    dtlb_update_o.is_page[x][y] = y==0 ? (ptw_lvl_q[0]== x) : 1'b0;
+                end else begin
+                    // dtlb_update_o.is_page[1][0] = 1'b0;
+                    // dtlb_update_o.is_page[0][0] = 1'b0;
+                    // dtlb_update_o.is_page[1][1] = (ptw_lvl_q[0] == LVL2);
+                    // dtlb_update_o.is_page[0][1] = (ptw_lvl_q[0] == LVL1);
+                    dtlb_update_o.is_page[x][y] = y!=0 ? (ptw_lvl_q[0]== x) : 1'b0;
+                end
+            end
         end
         // output the correct ASID
         itlb_update_o.asid = tlb_update_asid_q;
@@ -279,7 +288,7 @@ module cva6_ptw import ariane_pkg::*; #(
         dtlb_update_o.valid    = 1'b0;
         is_instr_ptw_n         = is_instr_ptw_q;
         ptw_lvl_n              = ptw_lvl_q;
-        gptw_lvl_n             = gptw_lvl_q;
+        // gptw_lvl_n             = gptw_lvl_q;
         ptw_pptr_n             = ptw_pptr_q;
         gptw_pptr_n            = gptw_pptr_q;
         state_d                = state_q;
@@ -301,8 +310,8 @@ module cva6_ptw import ariane_pkg::*; #(
 
             IDLE: begin
                 // by default we start with the top-most page table
-                ptw_lvl_n        = LVL1;
-                gptw_lvl_n       = LVL1;
+                ptw_lvl_n        = '0;
+                // gptw_lvl_n       = LVL1;
                 global_mapping_n = 1'b0;
                 is_instr_ptw_n   = 1'b0;
                 gpaddr_n         = '0;
@@ -405,25 +414,25 @@ module cva6_ptw import ariane_pkg::*; #(
                                         state_d = WAIT_GRANT;
                                         ptw_stage_d = G_FINAL_STAGE;
                                         gpte_d = pte;
-                                        gptw_lvl_n = ptw_lvl_q;
+                                        ptw_lvl_n[HYP_EXT] = ptw_lvl_q[0];
                                         gpaddr = {pte.ppn[riscv::GPPNW-1:0], vaddr_q[11:0]};
-                                        if (ptw_lvl_q == LVL2)
+                                        if (ptw_lvl_q[0] == 1)
                                             gpaddr[20:0] = vaddr_q[20:0];
-                                        if(ptw_lvl_q == LVL1)
+                                        if(ptw_lvl_q[0] == 0)
                                             gpaddr[29:0] = vaddr_q[29:0];
                                         gpaddr_n = gpaddr;
                                         ptw_pptr_n = {satp_ppn_i[HYP_EXT*2][riscv::PPNW-1:2], gpaddr[riscv::SVX-1:30], 3'b0};
-                                        ptw_lvl_n = LVL1;
+                                        ptw_lvl_n[0] = 0;
                                     end
                                 end
                                 G_INTERMED_STAGE: begin
                                     state_d = WAIT_GRANT;
                                     ptw_stage_d = S_STAGE;
-                                    ptw_lvl_n = gptw_lvl_q;
+                                    ptw_lvl_n[0] = ptw_lvl_q[HYP_EXT];
                                     pptr = {pte.ppn[riscv::GPPNW-1:0], gptw_pptr_q[11:0]};
-                                    if (ptw_lvl_q == LVL2)
+                                    if (ptw_lvl_q[0] == 1)
                                         pptr[20:0] = gptw_pptr_q[20:0];
-                                    if(ptw_lvl_q == LVL1)
+                                    if(ptw_lvl_q[0] == 0)
                                         pptr[29:0] = gptw_pptr_q[29:0];
                                     ptw_pptr_n = pptr;
                                 end
@@ -471,12 +480,12 @@ module cva6_ptw import ariane_pkg::*; #(
                             // check if the ppn is correctly aligned:
                             // 6. If i > 0 and pa.ppn[i − 1 : 0] != 0, this is a misaligned superpage; stop and raise a page-fault
                             // exception.
-                            if (ptw_lvl_q == LVL1 && pte.ppn[17:0] != '0) begin
+                            if (ptw_lvl_q == 0 && pte.ppn[17:0] != '0) begin
                                 state_d             = PROPAGATE_ERROR;
                                 ptw_stage_d         = ptw_stage_q;
                                 dtlb_update_o.valid = 1'b0;
                                 itlb_update_o.valid = 1'b0;
-                            end else if (ptw_lvl_q == LVL2 && pte.ppn[8:0] != '0) begin
+                            end else if (ptw_lvl_q == 1 && pte.ppn[8:0] != '0) begin
                                 state_d             = PROPAGATE_ERROR;
                                 ptw_stage_d         = ptw_stage_q;
                                 dtlb_update_o.valid = 1'b0;
@@ -490,19 +499,19 @@ module cva6_ptw import ariane_pkg::*; #(
                         // this is a pointer to the next TLB level
                         end else begin
                             // pointer to next level of page table
-                            if (ptw_lvl_q == LVL1) begin
+                            if (ptw_lvl_q[0] == 0) begin
                                 // we are in the second level now
-                                ptw_lvl_n = LVL2;
+                                ptw_lvl_n[0] = 1;
                                 case (ptw_stage_q)
                                     S_STAGE: begin
                                         if ((is_instr_ptw_q && enable_translation_i[HYP_EXT]) || (!is_instr_ptw_q && en_ld_st_translation_i[HYP_EXT])) begin
                                             ptw_stage_d = G_INTERMED_STAGE;
                                             gpte_d = pte;
-                                            gptw_lvl_n = LVL2;
+                                            ptw_lvl_n[HYP_EXT] = 1;
                                             pptr = {pte.ppn, vaddr_q[29:21], 3'b0};
                                             gptw_pptr_n = pptr;
                                             ptw_pptr_n = {satp_ppn_i[HYP_EXT*2][riscv::PPNW-1:2], pptr[riscv::SVX-1:30], 3'b0};
-                                            ptw_lvl_n = LVL1;
+                                            ptw_lvl_n[0] = 0;
                                         end else begin
                                             ptw_pptr_n = {pte.ppn, vaddr_q[29:21], 3'b0};
                                         end
@@ -516,19 +525,19 @@ module cva6_ptw import ariane_pkg::*; #(
                                 endcase
                             end
 
-                            if (ptw_lvl_q == LVL2) begin
+                            if (ptw_lvl_q[0] == 1) begin
                                 // here we received a pointer to the third level
-                                ptw_lvl_n  = LVL3;
+                                ptw_lvl_n[0]  = 2;
                                 unique case (ptw_stage_q)
                                     S_STAGE: begin
                                         if ((is_instr_ptw_q && enable_translation_i[HYP_EXT]) || (!is_instr_ptw_q && en_ld_st_translation_i[HYP_EXT])) begin
                                             ptw_stage_d = G_INTERMED_STAGE;
                                             gpte_d = pte;
-                                            gptw_lvl_n = LVL3;
+                                            ptw_lvl_n[HYP_EXT] = 2;
                                             pptr = {pte.ppn, vaddr_q[20:12], 3'b0};
                                             gptw_pptr_n = pptr;
                                             ptw_pptr_n = {satp_ppn_i[HYP_EXT*2][riscv::PPNW-1:2], pptr[riscv::SVX-1:30], 3'b0};
-                                            ptw_lvl_n = LVL1;
+                                            ptw_lvl_n[0] = 0;
                                         end else begin
                                             ptw_pptr_n = {pte.ppn, vaddr_q[20:12], 3'b0};
                                         end
@@ -549,9 +558,9 @@ module cva6_ptw import ariane_pkg::*; #(
                                 state_d = PROPAGATE_ERROR;
                                 ptw_stage_d = ptw_stage_q;
                             end
-                            if (ptw_lvl_q == LVL3) begin
+                            if (ptw_lvl_q[0] == 2) begin
                             // Should already be the last level page table => Error
-                            ptw_lvl_n   = LVL3;
+                            ptw_lvl_n[0]   = 2;
                             state_d = PROPAGATE_ERROR;
                             ptw_stage_d = ptw_stage_q;
                             end
@@ -618,8 +627,8 @@ module cva6_ptw import ariane_pkg::*; #(
             state_q            <= IDLE;
             ptw_stage_q        <= S_STAGE;
             is_instr_ptw_q     <= 1'b0;
-            ptw_lvl_q          <= LVL1;
-            gptw_lvl_q         <= LVL1;
+            ptw_lvl_q          <= '0;
+            // gptw_lvl_q         <= LVL1;
             tag_valid_q        <= 1'b0;
             tlb_update_asid_q  <= '0;
             // tlb_update_vmid_q  <= '0;
@@ -638,7 +647,7 @@ module cva6_ptw import ariane_pkg::*; #(
             gptw_pptr_q        <= gptw_pptr_n;
             is_instr_ptw_q     <= is_instr_ptw_n;
             ptw_lvl_q          <= ptw_lvl_n;
-            gptw_lvl_q         <= gptw_lvl_n;
+            // gptw_lvl_q         <= gptw_lvl_n;
             tag_valid_q        <= tag_valid_n;
             tlb_update_asid_q  <= tlb_update_asid_n;
             // tlb_update_vmid_q  <= tlb_update_vmid_n;
