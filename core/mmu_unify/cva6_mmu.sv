@@ -368,7 +368,8 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
         .ASID_WIDTH             ( ASID_WIDTH            ),
         .VPN_LEN(VPN_LEN),
         // .VMID_WIDTH             ( VMID_WIDTH            ),
-        .ArianeCfg              ( ArianeCfg             )
+        .ArianeCfg              ( ArianeCfg             ),
+        .PT_LEVELS(PT_LEVELS)
     ) i_ptw (
         .clk_i                  ( clk_i                 ),
         .rst_ni                 ( rst_ni                ),

@@ -93,7 +93,8 @@ module cva6_ptw import ariane_pkg::*; #(
     logic data_rvalid_q;
     riscv::xlen_t  data_rdata_q;
 
-    pte_cva6_t pte;
+    logic [PT_LEVELS-1:0] misaligned_page;
+    pte_cva6_t [HYP_EXT*2:0] pte; //[gpte_d,gpte_q,pte]
     // register to perform context switch between stages
     pte_cva6_t gpte_q, gpte_d;
     assign pte = pte_cva6_t'(data_rdata_q[riscv::PPNW+9:0]);
@@ -131,6 +132,7 @@ module cva6_ptw import ariane_pkg::*; #(
     // logic [VMID_WIDTH-1:0]  tlb_update_vmid_q, tlb_update_vmid_n;
     // register the VPN we need to walk, SV39 defines a 39 bit virtual address
     logic [riscv::VLEN-1:0] vaddr_q,   vaddr_n;
+    logic [HYP_EXT*2:0][PT_LEVELS-2:0][(VPN_LEN/PT_LEVELS)-1:0] vaddr_lvl;   
     // register the VPN we need to walk, SV39x4 defines a 41 bit virtual address for the G-Stage
     logic [riscv::GPLEN-1:0] gpaddr_q, gpaddr_n;
     // 4 byte aligned physical pointer
@@ -153,13 +155,32 @@ module cva6_ptw import ariane_pkg::*; #(
     // -----------
     // TLB Update
     // -----------
+
+    genvar z,w;
+    generate
+        for (z=0; z < PT_LEVELS-1; z++) begin  
+    
+            // check if the ppn is correctly aligned:
+            // 6. If i > 0 and pa.ppn[i − 1 : 0] != 0, this is a misaligned superpage; stop and raise a page-fault
+            // exception.
+            assign misaligned_page[z] = (ptw_lvl_q == (z)) && (pte[0].ppn[(VPN_LEN/PT_LEVELS)*(PT_LEVELS-1-z)-1:0] != '0);
+
+            //record the vaddr corresponding to each level
+            for (w=0; w < HYP_EXT*2+1; w++) begin 
+                assign vaddr_lvl[w][z] = w==0 ?  vaddr_q[12+((VPN_LEN/PT_LEVELS)*(PT_LEVELS-z-1))-1:12+((VPN_LEN/PT_LEVELS)*(PT_LEVELS-z-2))] :
+                                  w==1 ?  gptw_pptr_q[12+((VPN_LEN/PT_LEVELS)*(PT_LEVELS-z-1))-1:12+((VPN_LEN/PT_LEVELS)*(PT_LEVELS-z-2))]:
+                                  gpaddr_q[12+((VPN_LEN/PT_LEVELS)*(PT_LEVELS-z-1))-1:12+((VPN_LEN/PT_LEVELS)*(PT_LEVELS-z-2))];
+            end
+        end
+    endgenerate
+
     always_comb begin : tlb_update
         
         itlb_update_o.vpn = VPN_LEN'(vaddr_q[riscv::SV+HYP_EXT*2-1:12]);
         dtlb_update_o.vpn = VPN_LEN'(vaddr_q[riscv::SV+HYP_EXT*2-1:12]);
         // update the correct page table level
-        for (int unsigned x=0; x < PT_LEVELS-1; x++) begin
-            for (int unsigned y=0; y < HYP_EXT+1; y++) begin
+        for (int unsigned y=0; y < HYP_EXT+1; y++) begin
+            for (int unsigned x=0; x < PT_LEVELS-1; x++) begin
                 if(&enable_translation_i[HYP_EXT:0] && HYP_EXT==1) begin
                     // itlb_update_o.is_page[1][0] = (ptw_lvl_q[HYP_EXT] == LVL2);
                     // itlb_update_o.is_page[0][0] = (ptw_lvl_q[HYP_EXT] == LVL1);
@@ -200,6 +221,26 @@ module cva6_ptw import ariane_pkg::*; #(
                     dtlb_update_o.is_page[x][y] = y!=0 ? (ptw_lvl_q[0]== x) : 1'b0;
                 end
             end
+
+            // // set the global mapping bit
+            // if(enable_translation_i[HYP_EXT] && HYP_EXT==1) begin
+            //     // itlb_update_o.content[0] = gpte_q | (global_mapping_q << 5);
+            //     // itlb_update_o.content[1] = pte;
+            //     itlb_update_o.content[y] = y==0 ? pte[HYP_EXT] | (global_mapping_q << 5) : pte[0];
+            // end else begin
+            //     // itlb_update_o.content[0] = pte | (global_mapping_q << 5);
+            //     // itlb_update_o.content[1] = '0;
+            //     itlb_update_o.content[y] = y==0 ? pte[0] | (global_mapping_q << 5) : '0;
+            // end
+            // if(en_ld_st_translation_i[HYP_EXT]) begin
+            //     // dtlb_update_o.content[0] = gpte_q | (global_mapping_q << 5);
+            //     // dtlb_update_o.content[1] = pte;
+            //     dtlb_update_o.content[y] = y==0 ? pte[HYP_EXT] | (global_mapping_q << 5) : pte[0];
+            // end else begin
+            //     // dtlb_update_o.content[0] = pte | (global_mapping_q << 5);
+            //     // dtlb_update_o.content[1] = '0;
+            //     dtlb_update_o.content[y] = y==0 ? pte[0] | (global_mapping_q << 5) : '0;
+            // end
         end
         // output the correct ASID
         itlb_update_o.asid = tlb_update_asid_q;
@@ -210,18 +251,19 @@ module cva6_ptw import ariane_pkg::*; #(
         // set the global mapping bit
         if(enable_translation_i[HYP_EXT]) begin
             itlb_update_o.content[0] = gpte_q | (global_mapping_q << 5);
-            itlb_update_o.content[1] = pte;
+            itlb_update_o.content[1] = pte[0];
         end else begin
-            itlb_update_o.content[0] = pte | (global_mapping_q << 5);
+            itlb_update_o.content[0] = pte[0] | (global_mapping_q << 5);
             itlb_update_o.content[1] = '0;
         end
         if(en_ld_st_translation_i[HYP_EXT]) begin
             dtlb_update_o.content[0] = gpte_q | (global_mapping_q << 5);
-            dtlb_update_o.content[1] = pte;
+            dtlb_update_o.content[1] = pte[0];
         end else begin
-            dtlb_update_o.content[0] = pte | (global_mapping_q << 5);
+            dtlb_update_o.content[0] = pte[0] | (global_mapping_q << 5);
             dtlb_update_o.content[1] = '0;
         end
+        
     end
 
     assign req_port_o.tag_valid      = tag_valid_q;
@@ -306,6 +348,9 @@ module cva6_ptw import ariane_pkg::*; #(
         itlb_miss_o           = 1'b0;
         dtlb_miss_o           = 1'b0;
 
+        // if(HYP_EXT==1)
+        //     pte[HYP_EXT*2] = pte[HYP_EXT];
+
         case (state_q)
 
             IDLE: begin
@@ -316,9 +361,11 @@ module cva6_ptw import ariane_pkg::*; #(
                 is_instr_ptw_n   = 1'b0;
                 gpaddr_n         = '0;
                 gpte_d           = '0;
+                // if(HYP_EXT==1)
+                //     pte[HYP_EXT*2] = '0;
                 // if we got an ITLB miss
                 if ((|enable_translation_i[HYP_EXT:0]) & itlb_access_i & ~itlb_hit_i & ~dtlb_access_i) begin
-                    if (&enable_translation_i[HYP_EXT:0]) begin
+                    if (&enable_translation_i[HYP_EXT:0] && HYP_EXT==1) begin
                         ptw_stage_d = G_INTERMED_STAGE;
                         pptr = {satp_ppn_i[HYP_EXT], itlb_vaddr_i[riscv::SV-1:30], 3'b0};
                         gptw_pptr_n = pptr;
@@ -347,7 +394,7 @@ module cva6_ptw import ariane_pkg::*; #(
 
                 // we got an DTLB miss
                 end else if ((|en_ld_st_translation_i[HYP_EXT:0]) & dtlb_access_i & ~dtlb_hit_i) begin
-                    if (&en_ld_st_translation_i[HYP_EXT:0]) begin
+                    if (&en_ld_st_translation_i[HYP_EXT:0] && HYP_EXT==1) begin
                         ptw_stage_d = G_INTERMED_STAGE;
                         pptr = {satp_ppn_i[HYP_EXT], dtlb_vaddr_i[riscv::SV-1:30], 3'b0};
                         gptw_pptr_n = pptr;
@@ -391,14 +438,14 @@ module cva6_ptw import ariane_pkg::*; #(
                 if (data_rvalid_q) begin
 
                     // check if the global mapping bit is set
-                    if (pte.g && ptw_stage_q == S_STAGE)
+                    if (pte[0].g && ptw_stage_q == S_STAGE)
                         global_mapping_n = 1'b1;
 
                     // -------------
                     // Invalid PTE
                     // -------------
                     // If pte.v = 0, or if pte.r = 0 and pte.w = 1, stop and raise a page-fault exception.
-                    if (!pte.v || (!pte.r && pte.w))// || (|pte.reserved))
+                    if (!pte[0].v || (!pte[0].r && pte[0].w))// || (|pte.reserved))
                         state_d = PROPAGATE_ERROR;
                     // -----------
                     // Valid PTE
@@ -407,15 +454,17 @@ module cva6_ptw import ariane_pkg::*; #(
                         state_d = IDLE;
                         // it is a valid PTE
                         // if pte.r = 1 or pte.x = 1 it is a valid PTE
-                        if (pte.r || pte.x) begin
+                        if (pte[0].r || pte[0].x) begin
                             case (ptw_stage_q)
                                 S_STAGE: begin
-                                    if ((is_instr_ptw_q && enable_translation_i[HYP_EXT]) || (!is_instr_ptw_q && en_ld_st_translation_i[HYP_EXT])) begin
+                                    if (HYP_EXT==1 && ((is_instr_ptw_q && enable_translation_i[HYP_EXT]) || (!is_instr_ptw_q && en_ld_st_translation_i[HYP_EXT]))) begin
                                         state_d = WAIT_GRANT;
                                         ptw_stage_d = G_FINAL_STAGE;
-                                        gpte_d = pte;
+                                        // if(HYP_EXT==1)
+                                        //     pte[HYP_EXT*2] = pte[0];
+                                        gpte_d = pte[0];
                                         ptw_lvl_n[HYP_EXT] = ptw_lvl_q[0];
-                                        gpaddr = {pte.ppn[riscv::GPPNW-1:0], vaddr_q[11:0]};
+                                        gpaddr = {pte[0].ppn[riscv::GPPNW-1:0], vaddr_q[11:0]};
                                         if (ptw_lvl_q[0] == 1)
                                             gpaddr[20:0] = vaddr_q[20:0];
                                         if(ptw_lvl_q[0] == 0)
@@ -429,7 +478,7 @@ module cva6_ptw import ariane_pkg::*; #(
                                     state_d = WAIT_GRANT;
                                     ptw_stage_d = S_STAGE;
                                     ptw_lvl_n[0] = ptw_lvl_q[HYP_EXT];
-                                    pptr = {pte.ppn[riscv::GPPNW-1:0], gptw_pptr_q[11:0]};
+                                    pptr = {pte[0].ppn[riscv::GPPNW-1:0], gptw_pptr_q[11:0]};
                                     if (ptw_lvl_q[0] == 1)
                                         pptr[20:0] = gptw_pptr_q[20:0];
                                     if(ptw_lvl_q[0] == 0)
@@ -446,7 +495,7 @@ module cva6_ptw import ariane_pkg::*; #(
                                 // If page is not executable, we can directly raise an error. This
                                 // doesn't put a useless entry into the TLB. The same idea applies
                                 // to the access flag since we let the access flag be managed by SW.
-                                if (!pte.x || !pte.a) begin
+                                if (!pte[0].x || !pte[0].a) begin
                                 state_d = PROPAGATE_ERROR;
                                 ptw_stage_d = ptw_stage_q;
                                 end else if((ptw_stage_q == G_FINAL_STAGE) || !enable_translation_i[HYP_EXT])
@@ -461,7 +510,7 @@ module cva6_ptw import ariane_pkg::*; #(
                                 // If page is not readable (there are no write-only pages)
                                 // we can directly raise an error. This doesn't put a useless
                                 // entry into the TLB.
-                                if (pte.a && ((pte.r && !hlvx_inst_i) || (pte.x && (mxr_i[0] || hlvx_inst_i || (ptw_stage_q == S_STAGE && mxr_i[HYP_EXT] && en_ld_st_translation_i[HYP_EXT*2]))))) begin
+                                if (pte[0].a && ((pte[0].r && !hlvx_inst_i) || (pte[0].x && (mxr_i[0] || hlvx_inst_i || (ptw_stage_q == S_STAGE && mxr_i[HYP_EXT] && en_ld_st_translation_i[HYP_EXT*2]))))) begin
                                 if((ptw_stage_q == G_FINAL_STAGE) || !en_ld_st_translation_i[HYP_EXT])
                                     dtlb_update_o.valid = 1'b1;
                                 end else begin
@@ -471,101 +520,149 @@ module cva6_ptw import ariane_pkg::*; #(
                                 // Request is a store: perform some additional checks
                                 // If the request was a store and the page is not write-able, raise an error
                                 // the same applies if the dirty flag is not set
-                                if (lsu_is_store_i && (!pte.w || !pte.d)) begin
+                                if (lsu_is_store_i && (!pte[0].w || !pte[0].d)) begin
                                     dtlb_update_o.valid = 1'b0;
                                     state_d   = PROPAGATE_ERROR;
                                     ptw_stage_d = ptw_stage_q;
                                 end
                             end
-                            // check if the ppn is correctly aligned:
-                            // 6. If i > 0 and pa.ppn[i − 1 : 0] != 0, this is a misaligned superpage; stop and raise a page-fault
-                            // exception.
-                            if (ptw_lvl_q == 0 && pte.ppn[17:0] != '0) begin
+                            //if there is a misaligned page, propagate error
+                            if (|misaligned_page) begin
                                 state_d             = PROPAGATE_ERROR;
                                 ptw_stage_d         = ptw_stage_q;
                                 dtlb_update_o.valid = 1'b0;
                                 itlb_update_o.valid = 1'b0;
-                            end else if (ptw_lvl_q == 1 && pte.ppn[8:0] != '0) begin
-                                state_d             = PROPAGATE_ERROR;
-                                ptw_stage_d         = ptw_stage_q;
-                                dtlb_update_o.valid = 1'b0;
-                                itlb_update_o.valid = 1'b0;
-                            end
+                            end 
+                            // else if (ptw_lvl_q == 1 && pte[0].ppn[8:0] != '0) begin
+                                // state_d             = PROPAGATE_ERROR;
+                                // ptw_stage_d         = ptw_stage_q;
+                                // dtlb_update_o.valid = 1'b0;
+                                // itlb_update_o.valid = 1'b0;
+                            // end
                             // check if 63:41 are all zeros
-                            if (((enable_translation_i[HYP_EXT*2] && is_instr_ptw_q) || (en_ld_st_translation_i[HYP_EXT*2] && !is_instr_ptw_q)) && ptw_stage_q == S_STAGE && !((|pte.ppn[riscv::PPNW-1:riscv::GPPNW]) == 1'b0)) begin
+                            if (((enable_translation_i[HYP_EXT*2] && is_instr_ptw_q) || (en_ld_st_translation_i[HYP_EXT*2] && !is_instr_ptw_q)) && ptw_stage_q == S_STAGE && !((|pte[0].ppn[riscv::PPNW-1:riscv::GPPNW]) == 1'b0)) begin
                                 state_d = PROPAGATE_ERROR;
                                 ptw_stage_d = G_FINAL_STAGE;
                             end
                         // this is a pointer to the next TLB level
                         end else begin
                             // pointer to next level of page table
-                            if (ptw_lvl_q[0] == 0) begin
-                                // we are in the second level now
-                                ptw_lvl_n[0] = 1;
-                                case (ptw_stage_q)
-                                    S_STAGE: begin
-                                        if ((is_instr_ptw_q && enable_translation_i[HYP_EXT]) || (!is_instr_ptw_q && en_ld_st_translation_i[HYP_EXT])) begin
-                                            ptw_stage_d = G_INTERMED_STAGE;
-                                            gpte_d = pte;
-                                            ptw_lvl_n[HYP_EXT] = 1;
-                                            pptr = {pte.ppn, vaddr_q[29:21], 3'b0};
-                                            gptw_pptr_n = pptr;
-                                            ptw_pptr_n = {satp_ppn_i[HYP_EXT*2][riscv::PPNW-1:2], pptr[riscv::SVX-1:30], 3'b0};
-                                            ptw_lvl_n[0] = 0;
-                                        end else begin
-                                            ptw_pptr_n = {pte.ppn, vaddr_q[29:21], 3'b0};
-                                        end
-                                    end
-                                    G_INTERMED_STAGE: begin
-                                            ptw_pptr_n = {pte.ppn, gptw_pptr_q[29:21], 3'b0};
-                                    end
-                                    G_FINAL_STAGE: begin
-                                            ptw_pptr_n = {pte.ppn, gpaddr_q[29:21], 3'b0};
-                                    end
-                                endcase
-                            end
 
-                            if (ptw_lvl_q[0] == 1) begin
-                                // here we received a pointer to the third level
-                                ptw_lvl_n[0]  = 2;
+                            if (ptw_lvl_q[0] == PT_LEVELS-1) begin
+                                // Should already be the last level page table => Error
+                                    ptw_lvl_n[0]   = PT_LEVELS-1;
+                                    state_d = PROPAGATE_ERROR;
+                                    ptw_stage_d = ptw_stage_q;
+                                    
+
+                            end else begin
+                                ptw_lvl_n[0] = ptw_lvl_q[0]+1;
+                                state_d = WAIT_GRANT;
+
                                 unique case (ptw_stage_q)
                                     S_STAGE: begin
-                                        if ((is_instr_ptw_q && enable_translation_i[HYP_EXT]) || (!is_instr_ptw_q && en_ld_st_translation_i[HYP_EXT])) begin
+                                        if (HYP_EXT==1 && ((is_instr_ptw_q && enable_translation_i[HYP_EXT]) || (!is_instr_ptw_q && en_ld_st_translation_i[HYP_EXT]))) begin
                                             ptw_stage_d = G_INTERMED_STAGE;
-                                            gpte_d = pte;
-                                            ptw_lvl_n[HYP_EXT] = 2;
-                                            pptr = {pte.ppn, vaddr_q[20:12], 3'b0};
+                                            // if(HYP_EXT==1)
+                                            //     pte[HYP_EXT*2] = pte[0];
+                                            gpte_d = pte[0];
+                                            ptw_lvl_n[HYP_EXT] = ptw_lvl_q[0]+1;
+                                            pptr = {pte[0].ppn, vaddr_lvl[0][ptw_lvl_q[0]], (PT_LEVELS)'(0)};
                                             gptw_pptr_n = pptr;
                                             ptw_pptr_n = {satp_ppn_i[HYP_EXT*2][riscv::PPNW-1:2], pptr[riscv::SVX-1:30], 3'b0};
                                             ptw_lvl_n[0] = 0;
                                         end else begin
-                                            ptw_pptr_n = {pte.ppn, vaddr_q[20:12], 3'b0};
+                                            ptw_pptr_n = {pte[0].ppn, vaddr_lvl[0][ptw_lvl_q[0]], (PT_LEVELS)'(0)};
                                         end
                                     end
                                     G_INTERMED_STAGE: begin
-                                            ptw_pptr_n = {pte.ppn, gptw_pptr_q[20:12], 3'b0};
+                                            ptw_pptr_n = {pte[0].ppn, vaddr_lvl[HYP_EXT][ptw_lvl_q[0]], (PT_LEVELS)'(0)};
                                     end
                                     G_FINAL_STAGE: begin
-                                            ptw_pptr_n = {pte.ppn, gpaddr_q[20:12], 3'b0};
+                                            ptw_pptr_n = {pte[0].ppn, vaddr_lvl[HYP_EXT*2][ptw_lvl_q[0]], (PT_LEVELS)'(0)};
                                     end
-                                    default:;
                                 endcase
+
+                                if(pte[0].a || pte[0].d || pte[0].u) begin
+                                    state_d = PROPAGATE_ERROR;
+                                    ptw_stage_d = ptw_stage_q;
+                                end
+                                
                             end
 
-                            state_d = WAIT_GRANT;
+                            // if (ptw_lvl_q[0] == 0) begin
+                            //     // we are in the second level now
+                            //     ptw_lvl_n[0] = 1;
+                            //     case (ptw_stage_q)
+                            //         S_STAGE: begin
+                            //             if ((is_instr_ptw_q && enable_translation_i[HYP_EXT]) || (!is_instr_ptw_q && en_ld_st_translation_i[HYP_EXT])) begin
+                            //                 ptw_stage_d = G_INTERMED_STAGE;
+                            //                 if(HYP_EXT==1)
+                            //                     pte[HYP_EXT*2] = pte[0];
+                            //                 // gpte_d = pte;
+                            //                 ptw_lvl_n[HYP_EXT] = 1;
+                            //                 pptr = {pte[0].ppn, vaddr_q[29:21], 3'b0};
+                            //                 gptw_pptr_n = pptr;
+                            //                 ptw_pptr_n = {satp_ppn_i[HYP_EXT*2][riscv::PPNW-1:2], pptr[riscv::SVX-1:30], 3'b0};
+                            //                 ptw_lvl_n[0] = 0;
+                            //             end else begin
+                            //                 ptw_pptr_n = {pte[0].ppn, vaddr_q[29:21], 3'b0};
+                            //             end
+                            //         end
+                            //         G_INTERMED_STAGE: begin
+                            //                 ptw_pptr_n = {pte[0].ppn, gptw_pptr_q[29:21], 3'b0};
+                            //         end
+                            //         G_FINAL_STAGE: begin
+                            //                 ptw_pptr_n = {pte[0].ppn, gpaddr_q[29:21], 3'b0};
+                            //         end
+                            //     endcase
+                            // end
+
+                            // if (ptw_lvl_q[0] == 1) begin
+                            //     // here we received a pointer to the third level
+                            //     ptw_lvl_n[0]  = 2;
+                            //     unique case (ptw_stage_q)
+                            //         S_STAGE: begin
+                            //             if ((is_instr_ptw_q && enable_translation_i[HYP_EXT]) || (!is_instr_ptw_q && en_ld_st_translation_i[HYP_EXT])) begin
+                            //                 ptw_stage_d = G_INTERMED_STAGE;
+                            //                 if(HYP_EXT==1)
+                            //                     pte[HYP_EXT*2] = pte[0];
+                            //                 // gpte_d = pte;
+                            //                 ptw_lvl_n[HYP_EXT] = 2;
+                            //                 pptr = {pte[0].ppn, vaddr_q[20:12], 3'b0};
+                            //                 gptw_pptr_n = pptr;
+                            //                 ptw_pptr_n = {satp_ppn_i[HYP_EXT*2][riscv::PPNW-1:2], pptr[riscv::SVX-1:30], 3'b0};
+                            //                 ptw_lvl_n[0] = 0;
+                            //             end else begin
+                            //                 ptw_pptr_n = {pte[0].ppn, vaddr_q[20:12], 3'b0};
+                            //             end
+                            //         end
+                            //         G_INTERMED_STAGE: begin
+                            //                 ptw_pptr_n = {pte[0].ppn, gptw_pptr_q[20:12], 3'b0};
+                            //         end
+                            //         G_FINAL_STAGE: begin
+                            //                 ptw_pptr_n = {pte[0].ppn, gpaddr_q[20:12], 3'b0};
+                            //         end
+                            //         default:;
+                            //     endcase
+                            //     if(pte[0].a || pte[0].d || pte[0].u) begin
+                            //         state_d = PROPAGATE_ERROR;
+                            //         ptw_stage_d = ptw_stage_q;
+                            //     end
+                            // end
+
+                            // state_d = WAIT_GRANT;
                             // check if reserved bits are cleared for non-leaf entries
-                            if(pte.a || pte.d || pte.u) begin
-                                state_d = PROPAGATE_ERROR;
-                                ptw_stage_d = ptw_stage_q;
-                            end
-                            if (ptw_lvl_q[0] == 2) begin
-                            // Should already be the last level page table => Error
-                            ptw_lvl_n[0]   = 2;
-                            state_d = PROPAGATE_ERROR;
-                            ptw_stage_d = ptw_stage_q;
-                            end
+                            
+                            // if (ptw_lvl_q[0] == 2) begin
+                            // // Should already be the last level page table => Error
+                            // ptw_lvl_n[0]   = 2;
+                            // state_d = PROPAGATE_ERROR;
+                            // ptw_stage_d = ptw_stage_q;
+                            // end
+
                             // check if 63:41 are all zeros
-                            if (((enable_translation_i[HYP_EXT*2] && is_instr_ptw_q) || (en_ld_st_translation_i[HYP_EXT*2] && !is_instr_ptw_q)) && ptw_stage_q == S_STAGE && !((|pte.ppn[riscv::PPNW-1:riscv::GPPNW]) == 1'b0)) begin
+                            if (((enable_translation_i[HYP_EXT*2] && is_instr_ptw_q) || (en_ld_st_translation_i[HYP_EXT*2] && !is_instr_ptw_q)) && ptw_stage_q == S_STAGE && !((|pte[0].ppn[riscv::PPNW-1:riscv::GPPNW]) == 1'b0)) begin
                                 state_d = PROPAGATE_ERROR;
                                 ptw_stage_d = ptw_stage_q;
                             end
@@ -640,6 +737,8 @@ module cva6_ptw import ariane_pkg::*; #(
             data_rdata_q       <= '0;
             gpte_q             <= '0;
             data_rvalid_q      <= 1'b0;
+            // if(HYP_EXT==1)
+            //     pte[HYP_EXT] = '0;
         end else begin
             state_q            <= state_d;
             ptw_stage_q        <= ptw_stage_d;
@@ -657,6 +756,9 @@ module cva6_ptw import ariane_pkg::*; #(
             data_rdata_q       <= req_port_i.data_rdata;
             gpte_q             <= gpte_d;
             data_rvalid_q      <= req_port_i.data_rvalid;
+
+            // if(HYP_EXT==1)
+            //     pte[HYP_EXT] = pte[HYP_EXT*2];
         end
     end
 
