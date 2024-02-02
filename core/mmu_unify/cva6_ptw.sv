@@ -96,8 +96,8 @@ module cva6_ptw import ariane_pkg::*; #(
     logic [PT_LEVELS-1:0] misaligned_page;
     pte_cva6_t [HYP_EXT*2:0] pte; //[gpte_d,gpte_q,pte]
     // register to perform context switch between stages
-    pte_cva6_t gpte_q, gpte_d;
-    assign pte = pte_cva6_t'(data_rdata_q[riscv::PPNW+9:0]);
+    // pte_cva6_t gpte_q, gpte_d;
+    assign pte[0] = pte_cva6_t'(data_rdata_q[riscv::PPNW+9:0]);
 
     enum logic[2:0] {
       IDLE,
@@ -222,25 +222,25 @@ module cva6_ptw import ariane_pkg::*; #(
                 end
             end
 
-            // // set the global mapping bit
-            // if(enable_translation_i[HYP_EXT] && HYP_EXT==1) begin
-            //     // itlb_update_o.content[0] = gpte_q | (global_mapping_q << 5);
-            //     // itlb_update_o.content[1] = pte;
-            //     itlb_update_o.content[y] = y==0 ? pte[HYP_EXT] | (global_mapping_q << 5) : pte[0];
-            // end else begin
-            //     // itlb_update_o.content[0] = pte | (global_mapping_q << 5);
-            //     // itlb_update_o.content[1] = '0;
-            //     itlb_update_o.content[y] = y==0 ? pte[0] | (global_mapping_q << 5) : '0;
-            // end
-            // if(en_ld_st_translation_i[HYP_EXT]) begin
-            //     // dtlb_update_o.content[0] = gpte_q | (global_mapping_q << 5);
-            //     // dtlb_update_o.content[1] = pte;
-            //     dtlb_update_o.content[y] = y==0 ? pte[HYP_EXT] | (global_mapping_q << 5) : pte[0];
-            // end else begin
-            //     // dtlb_update_o.content[0] = pte | (global_mapping_q << 5);
-            //     // dtlb_update_o.content[1] = '0;
-            //     dtlb_update_o.content[y] = y==0 ? pte[0] | (global_mapping_q << 5) : '0;
-            // end
+            // set the global mapping bit
+            if(enable_translation_i[HYP_EXT] && HYP_EXT==1) begin
+                // itlb_update_o.content[0] = gpte_q | (global_mapping_q << 5);
+                // itlb_update_o.content[1] = pte;
+                itlb_update_o.content[y] = y==0 ? pte[HYP_EXT] | (global_mapping_q << 5) : pte[0];
+            end else begin
+                // itlb_update_o.content[0] = pte | (global_mapping_q << 5);
+                // itlb_update_o.content[1] = '0;
+                itlb_update_o.content[y] = y==0 ? pte[0] | (global_mapping_q << 5) : '0;
+            end
+            if(en_ld_st_translation_i[HYP_EXT]) begin
+                // dtlb_update_o.content[0] = gpte_q | (global_mapping_q << 5);
+                // dtlb_update_o.content[1] = pte;
+                dtlb_update_o.content[y] = y==0 ? pte[HYP_EXT] | (global_mapping_q << 5) : pte[0];
+            end else begin
+                // dtlb_update_o.content[0] = pte | (global_mapping_q << 5);
+                // dtlb_update_o.content[1] = '0;
+                dtlb_update_o.content[y] = y==0 ? pte[0] | (global_mapping_q << 5) : '0;
+            end
         end
         // output the correct ASID
         itlb_update_o.asid = tlb_update_asid_q;
@@ -248,21 +248,6 @@ module cva6_ptw import ariane_pkg::*; #(
         // output the correct VMID
         // itlb_update_o.vmid = tlb_update_vmid_q;
         // dtlb_update_o.vmid = tlb_update_vmid_q;
-        // set the global mapping bit
-        if(enable_translation_i[HYP_EXT]) begin
-            itlb_update_o.content[0] = gpte_q | (global_mapping_q << 5);
-            itlb_update_o.content[1] = pte[0];
-        end else begin
-            itlb_update_o.content[0] = pte[0] | (global_mapping_q << 5);
-            itlb_update_o.content[1] = '0;
-        end
-        if(en_ld_st_translation_i[HYP_EXT]) begin
-            dtlb_update_o.content[0] = gpte_q | (global_mapping_q << 5);
-            dtlb_update_o.content[1] = pte[0];
-        end else begin
-            dtlb_update_o.content[0] = pte[0] | (global_mapping_q << 5);
-            dtlb_update_o.content[1] = '0;
-        end
         
     end
 
@@ -335,7 +320,7 @@ module cva6_ptw import ariane_pkg::*; #(
         gptw_pptr_n            = gptw_pptr_q;
         state_d                = state_q;
         ptw_stage_d            = ptw_stage_q;
-        gpte_d                 = gpte_q;
+        // gpte_d                 = gpte_q;
         global_mapping_n       = global_mapping_q;
         // input registers
         tlb_update_asid_n     = tlb_update_asid_q;
@@ -348,8 +333,8 @@ module cva6_ptw import ariane_pkg::*; #(
         itlb_miss_o           = 1'b0;
         dtlb_miss_o           = 1'b0;
 
-        // if(HYP_EXT==1)
-        //     pte[HYP_EXT*2] = pte[HYP_EXT];
+        if(HYP_EXT==1)
+            pte[HYP_EXT*2] = pte[HYP_EXT];
 
         case (state_q)
 
@@ -360,9 +345,9 @@ module cva6_ptw import ariane_pkg::*; #(
                 global_mapping_n = 1'b0;
                 is_instr_ptw_n   = 1'b0;
                 gpaddr_n         = '0;
-                gpte_d           = '0;
-                // if(HYP_EXT==1)
-                //     pte[HYP_EXT*2] = '0;
+                // gpte_d           = '0;
+                if(HYP_EXT==1)
+                    pte[HYP_EXT*2] = '0;
                 // if we got an ITLB miss
                 if ((|enable_translation_i[HYP_EXT:0]) & itlb_access_i & ~itlb_hit_i & ~dtlb_access_i) begin
                     if (&enable_translation_i[HYP_EXT:0] && HYP_EXT==1) begin
@@ -460,9 +445,9 @@ module cva6_ptw import ariane_pkg::*; #(
                                     if (HYP_EXT==1 && ((is_instr_ptw_q && enable_translation_i[HYP_EXT]) || (!is_instr_ptw_q && en_ld_st_translation_i[HYP_EXT]))) begin
                                         state_d = WAIT_GRANT;
                                         ptw_stage_d = G_FINAL_STAGE;
-                                        // if(HYP_EXT==1)
-                                        //     pte[HYP_EXT*2] = pte[0];
-                                        gpte_d = pte[0];
+                                        if(HYP_EXT==1)
+                                            pte[HYP_EXT*2] = pte[0];
+                                        // gpte_d = pte;
                                         ptw_lvl_n[HYP_EXT] = ptw_lvl_q[0];
                                         gpaddr = {pte[0].ppn[riscv::GPPNW-1:0], vaddr_q[11:0]};
                                         if (ptw_lvl_q[0] == 1)
@@ -559,13 +544,13 @@ module cva6_ptw import ariane_pkg::*; #(
                                 ptw_lvl_n[0] = ptw_lvl_q[0]+1;
                                 state_d = WAIT_GRANT;
 
-                                unique case (ptw_stage_q)
+                                case (ptw_stage_q)
                                     S_STAGE: begin
                                         if (HYP_EXT==1 && ((is_instr_ptw_q && enable_translation_i[HYP_EXT]) || (!is_instr_ptw_q && en_ld_st_translation_i[HYP_EXT]))) begin
                                             ptw_stage_d = G_INTERMED_STAGE;
-                                            // if(HYP_EXT==1)
-                                            //     pte[HYP_EXT*2] = pte[0];
-                                            gpte_d = pte[0];
+                                            if(HYP_EXT==1)
+                                                pte[HYP_EXT*2] = pte[0];
+                                            // gpte_d = pte;
                                             ptw_lvl_n[HYP_EXT] = ptw_lvl_q[0]+1;
                                             pptr = {pte[0].ppn, vaddr_lvl[0][ptw_lvl_q[0]], (PT_LEVELS)'(0)};
                                             gptw_pptr_n = pptr;
@@ -662,7 +647,7 @@ module cva6_ptw import ariane_pkg::*; #(
                             // end
 
                             // check if 63:41 are all zeros
-                            if (((enable_translation_i[HYP_EXT*2] && is_instr_ptw_q) || (en_ld_st_translation_i[HYP_EXT*2] && !is_instr_ptw_q)) && ptw_stage_q == S_STAGE && !((|pte[0].ppn[riscv::PPNW-1:riscv::GPPNW]) == 1'b0)) begin
+                            if (HYP_EXT==1 && (((enable_translation_i[HYP_EXT*2] && is_instr_ptw_q) || (en_ld_st_translation_i[HYP_EXT*2] && !is_instr_ptw_q)) && ptw_stage_q == S_STAGE && !((|pte[0].ppn[riscv::PPNW-1:riscv::GPPNW]) == 1'b0))) begin
                                 state_d = PROPAGATE_ERROR;
                                 ptw_stage_d = ptw_stage_q;
                             end
@@ -685,8 +670,10 @@ module cva6_ptw import ariane_pkg::*; #(
             PROPAGATE_ERROR: begin
                 state_d     = IDLE;
                 ptw_error_o[0] = 1'b1;
-                ptw_error_o[HYP_EXT]   = (ptw_stage_q != S_STAGE) ? 1'b1 : 1'b0;
-                ptw_error_o[HYP_EXT*2] = (ptw_stage_q == G_INTERMED_STAGE) ? 1'b1 : 1'b0;
+                if(HYP_EXT==1) begin
+                    ptw_error_o[HYP_EXT]   = (ptw_stage_q != S_STAGE) ? 1'b1 : 1'b0;
+                    ptw_error_o[HYP_EXT*2] = (ptw_stage_q == G_INTERMED_STAGE) ? 1'b1 : 1'b0;
+                end
             end
             PROPAGATE_ACCESS_ERROR: begin
                 state_d     = IDLE;
@@ -735,10 +722,10 @@ module cva6_ptw import ariane_pkg::*; #(
             gptw_pptr_q        <= '0;
             global_mapping_q   <= 1'b0;
             data_rdata_q       <= '0;
-            gpte_q             <= '0;
+            // gpte_q             <= '0;
             data_rvalid_q      <= 1'b0;
-            // if(HYP_EXT==1)
-            //     pte[HYP_EXT] = '0;
+            if(HYP_EXT==1)
+                pte[HYP_EXT] = '0;
         end else begin
             state_q            <= state_d;
             ptw_stage_q        <= ptw_stage_d;
@@ -754,11 +741,11 @@ module cva6_ptw import ariane_pkg::*; #(
             gpaddr_q           <= gpaddr_n;
             global_mapping_q   <= global_mapping_n;
             data_rdata_q       <= req_port_i.data_rdata;
-            gpte_q             <= gpte_d;
+            // gpte_q             <= gpte_d;
             data_rvalid_q      <= req_port_i.data_rvalid;
 
-            // if(HYP_EXT==1)
-            //     pte[HYP_EXT] = pte[HYP_EXT*2];
+            if(HYP_EXT==1)
+                pte[HYP_EXT] = pte[HYP_EXT*2];
         end
     end
 
