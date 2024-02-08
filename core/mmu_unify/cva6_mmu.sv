@@ -127,7 +127,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     logic                   ptw_access_exception; // PTW threw an access exception (PMPs)
     logic [HYP_EXT:0][riscv::PLEN-1:0] ptw_bad_paddr; // PTW guest page fault bad guest physical addr
 
-    logic [riscv::VLEN-1:0] update_vaddr, shared_tlb_vaddr;
+    logic [riscv::VLEN-1:0] update_vaddr,shared_tlb_vaddr;
 
     tlb_update_cva6_t update_itlb, update_dtlb, update_shared_tlb;
 
@@ -145,8 +145,8 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     logic        dtlb_lu_hit;
     logic [riscv::GPLEN-1:0] dtlb_gpaddr;
 
-    logic        shared_tlb_access;
-    logic        shared_tlb_hit,itlb_req;
+    logic  [HYP_EXT*2:0] shared_tlb_access;
+    logic        shared_tlb_hit, itlb_req;
 
   // Assignments
 
@@ -156,7 +156,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     cva6_tlb #(
         .pte_cva6_t(pte_cva6_t),
         .tlb_update_cva6_t(tlb_update_cva6_t),
-        .TLB_ENTRIES      ( INSTR_TLB_ENTRIES),
+        .TLB_ENTRIES      ( INSTR_TLB_ENTRIES          ),
         .HYP_EXT(HYP_EXT),
         .ASID_WIDTH (ASID_WIDTH),
         .ASID_LEN (ASID_LEN),
@@ -166,15 +166,14 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
         .clk_i            ( clk_i                      ),
         .rst_ni           ( rst_ni                     ),
         .flush_i          ( flush_tlb_i                ),
-        // .v_st_enbl_i      ( enable_translation_i            ),
-        .v_st_enbl_i('1),
+        .v_st_enbl_i      ( enable_translation_i            ),
         .update_i         ( update_itlb                ),
         .lu_access_i      ( itlb_lu_access             ),
         .lu_asid_i        ( itlb_mmu_asid_i            ),
         .asid_to_be_flushed_i (asid_to_be_flushed_i),
         .vaddr_to_be_flushed_i(vaddr_to_be_flushed_i),
         .lu_vaddr_i       ( icache_areq_i.fetch_vaddr  ),
-        .lu_content_o     ( itlb_content               ),
+        .lu_content_o     ( itlb_content           ),
         .lu_gpaddr_o      ( itlb_gpaddr                ),
         .lu_is_page_o     ( itlb_is_page               ),
         .lu_hit_o         ( itlb_lu_hit                )
@@ -183,7 +182,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     cva6_tlb #(
         .pte_cva6_t(pte_cva6_t),
         .tlb_update_cva6_t(tlb_update_cva6_t),
-        .TLB_ENTRIES    (DATA_TLB_ENTRIES),
+        .TLB_ENTRIES      ( DATA_TLB_ENTRIES          ),
         .HYP_EXT(HYP_EXT),
         .ASID_WIDTH (ASID_WIDTH),
         .ASID_LEN (ASID_LEN),
@@ -193,16 +192,15 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
         .clk_i            ( clk_i                       ),
         .rst_ni           ( rst_ni                      ),
         .flush_i          ( flush_tlb_i                 ),
-        // .v_st_enbl_i      ( en_ld_st_translation_i             ),
-        .v_st_enbl_i('1),
+        .v_st_enbl_i      ( en_ld_st_translation_i             ),
         .update_i         ( update_dtlb                 ),
         .lu_access_i      ( dtlb_lu_access              ),
         .lu_asid_i        ( dtlb_mmu_asid_i             ),
         .asid_to_be_flushed_i ( asid_to_be_flushed_i),
         .vaddr_to_be_flushed_i(vaddr_to_be_flushed_i),
         .lu_vaddr_i       ( lsu_vaddr_i                 ),
-        .lu_content_o     ( dtlb_content                ),
-        .lu_gpaddr_o      ( dtlb_gpaddr                 ),
+        .lu_content_o     ( dtlb_content            ),
+        .lu_gpaddr_o      ( dtlb_gpaddr                ),
         .lu_is_page_o     ( dtlb_is_page                ),
         .lu_hit_o         ( dtlb_lu_hit                 )
     );
@@ -222,96 +220,97 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
         .clk_i  (clk_i),
         .rst_ni (rst_ni),
         .flush_i(flush_tlb_i),
-        .v_st_enbl_i({en_ld_st_translation_i,enable_translation_i}),
+        .v_st_enbl_i('1),
         .enable_translation_i  (enable_translation_i),
         .en_ld_st_translation_i(en_ld_st_translation_i),
-
+  
         .asid_i       (asid_i),
         // from TLBs
         // did we miss?
         .itlb_access_i(itlb_lu_access),
         .itlb_hit_i   (itlb_lu_hit),
         .itlb_vaddr_i (icache_areq_i.fetch_vaddr),
-
+  
         .dtlb_access_i(dtlb_lu_access),
         .dtlb_hit_i   (dtlb_lu_hit),
         .dtlb_vaddr_i (lsu_vaddr_i),
-
+  
         // to TLBs, update logic
         .itlb_update_o(update_itlb),
         .dtlb_update_o(update_dtlb),
-
+  
         // Performance counters
         .itlb_miss_o(itlb_miss_o),
         .dtlb_miss_o(dtlb_miss_o),
-
+  
         .shared_tlb_access_o(shared_tlb_access),
         .shared_tlb_hit_o   (shared_tlb_hit),
         .shared_tlb_vaddr_o (shared_tlb_vaddr),
-
+  
         .itlb_req_o         (itlb_req),
         // to update shared tlb
         .shared_tlb_update_i(update_shared_tlb)
     );
+  
+      cva6_ptw  #(
+          .ArianeCfg              ( ArianeCfg             ),
+          .pte_cva6_t(pte_cva6_t),
+          .tlb_update_cva6_t(tlb_update_cva6_t),
+          .HYP_EXT(HYP_EXT),
+          .ASID_WIDTH             ( ASID_WIDTH            ),
+          .VPN_LEN(VPN_LEN),
+          .PT_LEVELS(PT_LEVELS)
+      ) i_ptw (
+          .clk_i                  ( clk_i                 ),
+          .rst_ni                 ( rst_ni                ),
+          .flush_i(flush_i),
 
-    cva6_ptw  #(
-        .pte_cva6_t(pte_cva6_t),
-        .tlb_update_cva6_t(tlb_update_cva6_t),
-        .HYP_EXT(HYP_EXT),
-        .ASID_WIDTH             ( ASID_WIDTH            ),
-        .VPN_LEN(VPN_LEN),
-        .ArianeCfg              ( ArianeCfg             ),
-        .PT_LEVELS(PT_LEVELS)
-    ) i_ptw (
-        .clk_i                  ( clk_i                 ),
-        .rst_ni                 ( rst_ni                ),
-        .flush_i(flush_i),
+          .ptw_active_o           ( ptw_active            ),
+          .walking_instr_o        ( walking_instr         ),
+          .ptw_error_o            ( ptw_error             ),
+          .ptw_access_exception_o ( ptw_access_exception  ),
 
-        .ptw_active_o           ( ptw_active            ),
-        .walking_instr_o        ( walking_instr         ),
-        .ptw_error_o            ( ptw_error             ),
-        .ptw_access_exception_o ( ptw_access_exception  ),
+          .enable_translation_i  (enable_translation_i),
+          .en_ld_st_translation_i(en_ld_st_translation_i),
 
-        .enable_translation_i  (enable_translation_i),
-        .en_ld_st_translation_i(en_ld_st_translation_i),
+          .lsu_is_store_i(lsu_is_store_i),
+          // PTW memory interface
+          .req_port_i             ( req_port_i            ),
+          .req_port_o             ( req_port_o            ),
+          // .enable_translation_i   ( enable_translation_i  ),
+          // .en_ld_st_translation_i ( en_ld_st_translation_i),
+          .asid_i                 (asid_i),
+  
+          .update_vaddr_o         ( update_vaddr          ),
 
-        .lsu_is_store_i(lsu_is_store_i),
-        // PTW memory interface
-        .req_port_i             ( req_port_i            ),
-        .req_port_o             ( req_port_o            ),
-        // .enable_translation_i   ( enable_translation_i  ),
-        // .en_ld_st_translation_i ( en_ld_st_translation_i),
-        .asid_i                 (asid_i),
+          // to Shared TLB, update logic
+          .shared_tlb_update_o(update_shared_tlb),
+  
+          
+        // from shared TLB
+        // did we miss?
+          .shared_tlb_access_i(shared_tlb_access),
+          .shared_tlb_hit_i   (shared_tlb_hit),
+          .shared_tlb_vaddr_i (shared_tlb_vaddr),
+  
+          .itlb_req_i(itlb_req),
+          // .dtlb_access_i          ( dtlb_lu_access        ),
+          // .dtlb_hit_i             ( dtlb_lu_hit           ),
+          // .dtlb_vaddr_i           ( lsu_vaddr_i           ),
+          .hlvx_inst_i            ( hlvx_inst_i           ),
+          // from CSR file
+          .satp_ppn_i             (satp_ppn_i             ),
+          .mxr_i                  (mxr_i                  ),
 
-        .update_vaddr_o         ( update_vaddr          ),
+          // Performance counters
+          .shared_tlb_miss_o(),  //open for now
+  
+        // PMP
+          .pmpcfg_i   (pmpcfg_i),
+          .pmpaddr_i  (pmpaddr_i),
+          .bad_paddr_o(ptw_bad_paddr)
 
-        // to Shared TLB, update logic
-        .shared_tlb_update_o(update_shared_tlb),
-    
-    // from shared TLB
-    // did we miss?
-        .shared_tlb_access_i(shared_tlb_access),
-        .shared_tlb_hit_i   (shared_tlb_hit),
-        .shared_tlb_vaddr_i (shared_tlb_vaddr),
-
-        .itlb_req_i(itlb_req),
-        // .dtlb_access_i          ( dtlb_lu_access        ),
-        // .dtlb_hit_i             ( dtlb_lu_hit           ),
-        // .dtlb_vaddr_i           ( lsu_vaddr_i           ),
-        .hlvx_inst_i            ( hlvx_inst_i           ),
-        // from CSR file
-        .satp_ppn_i             (satp_ppn_i             ),
-        .mxr_i                  (mxr_i                  ),
-
-        // Performance counters
-        .shared_tlb_miss_o(),  //open for now
-
-    // PMP
-        .pmpcfg_i   (pmpcfg_i),
-        .pmpaddr_i  (pmpaddr_i),
-        .bad_paddr_o(ptw_bad_paddr)
-
-    );
+      );
 
     // ila_1 i_ila_1 (
     //     .clk(clk_i), // input wire clk
@@ -368,11 +367,11 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
         // 2. We got an access error because of insufficient permissions -> throw an access exception
         icache_areq_o.fetch_exception      = '0;
         // Check whether we are allowed to access this memory region from a fetch perspective
-        iaccess_err[0]   = icache_areq_i.fetch_req && (((priv_lvl_i == riscv::PRIV_LVL_U) && ~itlb_content[0].u)
+        iaccess_err[0]   = icache_areq_i.fetch_req && enable_translation_i[0] && (((priv_lvl_i == riscv::PRIV_LVL_U) && ~itlb_content[0].u)
                                                     || ((priv_lvl_i == riscv::PRIV_LVL_S) && itlb_content[0].u));
 
         if(HYP_EXT==1)
-            iaccess_err[HYP_EXT] = icache_areq_i.fetch_req && !itlb_content[HYP_EXT].u;
+            iaccess_err[HYP_EXT] = icache_areq_i.fetch_req && enable_translation_i[HYP_EXT] && !itlb_content[HYP_EXT].u;
         // MMU enabled: address from TLB, request delayed until hit. Error when TLB
         // hit and no access right or TLB hit and translated address not valid (e.g.
         // AXI decode error), or when PTW performs walk due to ITLB miss and raises
@@ -445,7 +444,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                     if(HYP_EXT==1) begin
                         icache_areq_o.fetch_exception = {
                             riscv::INSTR_ACCESS_FAULT,
-                            {riscv::XLEN '(icache_areq_i.fetch_vaddr)},
+                            {{riscv::XLEN-riscv::PLEN{1'b0}}, icache_areq_i.fetch_vaddr},
                             {riscv::GPLEN{1'b0}},
                             {riscv::XLEN{1'b0}},
                             enable_translation_i[HYP_EXT*2],
@@ -515,7 +514,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
         end
         // if it didn't match any execute region throw an `Instruction Access Fault`
         // or: if we are not translating, check PMPs immediately on the paddr
-        if ((!match_any_execute_region) || (!(|enable_translation_i[HYP_EXT:0]) && !pmp_instr_allow)) begin
+        if ((!match_any_execute_region && !ptw_error[0]) || (!(|enable_translation_i[HYP_EXT:0]) && !pmp_instr_allow)) begin
             if(HYP_EXT==1) begin
                 icache_areq_o.fetch_exception = {
                     riscv::INSTR_ACCESS_FAULT,
@@ -641,11 +640,12 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
 
         // Check if the User flag is set, then we may only access it in supervisor mode
         // if SUM is enabled
-        daccess_err[0] = ((ld_st_priv_lvl_i == riscv::PRIV_LVL_S && (en_ld_st_translation_i[HYP_EXT*2] ? !sum_i[HYP_EXT] : !sum_i[0] ) && dtlb_pte_q[0].u) || // SUM is not set and we are trying to access a user page in supervisor mode
+        daccess_err[0] = en_ld_st_translation_i[0] &&
+                        ((ld_st_priv_lvl_i == riscv::PRIV_LVL_S && (en_ld_st_translation_i[HYP_EXT*2] ? !sum_i[HYP_EXT] : !sum_i[0] ) && dtlb_pte_q[0].u) || // SUM is not set and we are trying to access a user page in supervisor mode
                         (ld_st_priv_lvl_i == riscv::PRIV_LVL_U && !dtlb_pte_q[0].u));
         
         if(HYP_EXT==1)
-            daccess_err[HYP_EXT] = !dtlb_pte_q[1].u;
+            daccess_err[HYP_EXT] = en_ld_st_translation_i[HYP_EXT] && !dtlb_pte_q[1].u;
         // translation is enabled and no misaligned exception occurred
         if ((|en_ld_st_translation_i[HYP_EXT:0]) && !misaligned_ex_q.valid) begin
             lsu_valid_o = 1'b0;
@@ -664,7 +664,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                 if (lsu_is_store_q) begin
                     // check if the page is write-able and we are not violating privileges
                     // also check if the dirty flag is set
-                    if(HYP_EXT==1 && (!dtlb_pte_q[HYP_EXT].w || daccess_err[HYP_EXT] || !dtlb_pte_q[HYP_EXT].d)) begin
+                    if(HYP_EXT==1 && en_ld_st_translation_i[HYP_EXT] && (!dtlb_pte_q[HYP_EXT].w || daccess_err[HYP_EXT] || !dtlb_pte_q[HYP_EXT].d)) begin
                         lsu_exception_o = {
                             riscv::STORE_GUEST_PAGE_FAULT,
                             {{riscv::XLEN-riscv::VLEN{lsu_vaddr_q[0][riscv::VLEN-1]}},lsu_vaddr_q[0]},
@@ -673,7 +673,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                             en_ld_st_translation_i[HYP_EXT*2],
                             1'b1
                         };
-                    end else if ((!dtlb_pte_q[0].w || daccess_err[0] || !dtlb_pte_q[0].d)) begin
+                    end else if (en_ld_st_translation_i[0] && (!dtlb_pte_q[0].w || daccess_err[0] || !dtlb_pte_q[0].d)) begin
                         if(HYP_EXT==1) begin
                             lsu_exception_o = {
                                 riscv::STORE_PAGE_FAULT,
@@ -865,8 +865,9 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
                         1'b1
                     };
                 end
-                else 
+                else begin
                     lsu_exception_o = {riscv::ST_ACCESS_FAULT, lsu_paddr_o[riscv::PLEN-1:(riscv::PLEN > riscv::VLEN) ? (riscv::PLEN - riscv::VLEN) : 0], 1'b1};
+                end
                 end else begin
                     if(HYP_EXT==1) begin
                     lsu_exception_o = {
