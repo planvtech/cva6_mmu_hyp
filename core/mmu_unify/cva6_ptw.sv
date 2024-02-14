@@ -175,12 +175,13 @@ module cva6_ptw import ariane_pkg::*; #(
         // update the correct page table level
         for (int unsigned y=0; y < HYP_EXT+1; y++) begin
             for (int unsigned x=0; x < PT_LEVELS-1; x++) begin
-                if((&enable_translation_i[HYP_EXT:0] || &en_ld_st_translation_i[HYP_EXT:0])&& HYP_EXT==1) 
+                if((&enable_translation_i[HYP_EXT:0] || &en_ld_st_translation_i[HYP_EXT:0])&& HYP_EXT==1) begin
                     shared_tlb_update_o.is_page[x][y] = (ptw_lvl_q[y==HYP_EXT? 0 : 1] == x);
-                else if(enable_translation_i[0] || en_ld_st_translation_i[0] || HYP_EXT==0) 
+                end else if(enable_translation_i[0] || en_ld_st_translation_i[0] || HYP_EXT==0) begin
                     shared_tlb_update_o.is_page[x][y] = y==0 ? (ptw_lvl_q[0]== x) : 1'b0;
-                else 
+                end else begin
                     shared_tlb_update_o.is_page[x][y] = y!=0 ? (ptw_lvl_q[0]== x) : 1'b0;
+                end
             end
 
             // set the global mapping bit
@@ -555,7 +556,7 @@ module cva6_ptw import ariane_pkg::*; #(
             data_rdata_q       <= '0;
             data_rvalid_q      <= 1'b0;
             if(HYP_EXT==1)
-                pte[HYP_EXT] = '0;
+                pte[HYP_EXT] <= '0;
         end else begin
             state_q            <= state_d;
             ptw_stage_q        <= ptw_stage_d;
@@ -572,7 +573,7 @@ module cva6_ptw import ariane_pkg::*; #(
             data_rvalid_q      <= req_port_i.data_rvalid;
 
             if(HYP_EXT==1)
-                pte[HYP_EXT] = pte[HYP_EXT*2];
+                pte[HYP_EXT] <= pte[HYP_EXT*2];
         end
     end
 

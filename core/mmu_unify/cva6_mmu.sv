@@ -145,7 +145,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
     logic        dtlb_lu_hit;
     logic [riscv::GPLEN-1:0] dtlb_gpaddr;
 
-    logic  [HYP_EXT*2:0] shared_tlb_access;
+    logic   shared_tlb_access,shared_tlb_miss;
     logic        shared_tlb_hit, itlb_req;
 
   // Assignments
@@ -220,11 +220,12 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
         .clk_i  (clk_i),
         .rst_ni (rst_ni),
         .flush_i(flush_tlb_i),
-        .v_st_enbl_i('1),
+        .v_st_enbl_i({enable_translation_i,en_ld_st_translation_i}),
         .enable_translation_i  (enable_translation_i),
         .en_ld_st_translation_i(en_ld_st_translation_i),
   
-        .asid_i       (asid_i),
+        .dtlb_asid_i       (dtlb_mmu_asid_i),
+        .itlb_asid_i       (itlb_mmu_asid_i),
         // from TLBs
         // did we miss?
         .itlb_access_i(itlb_lu_access),
@@ -242,6 +243,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
         // Performance counters
         .itlb_miss_o(itlb_miss_o),
         .dtlb_miss_o(dtlb_miss_o),
+        // .shared_tlb_miss_i(shared_tlb_miss),  
   
         .shared_tlb_access_o(shared_tlb_access),
         .shared_tlb_hit_o   (shared_tlb_hit),
@@ -303,7 +305,7 @@ module cva6_mmu_sv39x4_unified import ariane_pkg::*; #(
           .mxr_i                  (mxr_i                  ),
 
           // Performance counters
-          .shared_tlb_miss_o(),  //open for now
+          .shared_tlb_miss_o(shared_tlb_miss),  //open for now
   
         // PMP
           .pmpcfg_i   (pmpcfg_i),
