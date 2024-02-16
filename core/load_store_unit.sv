@@ -179,7 +179,7 @@ module load_store_unit import ariane_pkg::*; #(
 
     if (MMU_PRESENT && ariane_pkg::RVH && (riscv::XLEN == 64)) begin : gen_mmu_sv39x4
         // cva6_mmu_sv39x4 #(
-        cva6_mmu_sv39x4_unified #(
+        cva6_mmu #(
             .INSTR_TLB_ENTRIES      ( ariane_pkg::INSTR_TLB_ENTRIES ),
             .DATA_TLB_ENTRIES       ( ariane_pkg::DATA_TLB_ENTRIES  ),
             .ASID_WIDTH             ( {VMID_WIDTH,ASID_WIDTH}       ),
