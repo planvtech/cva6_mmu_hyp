@@ -172,21 +172,19 @@ module load_store_unit import ariane_pkg::*; #(
     // -------------------
 
     localparam int unsigned HYP_EXT  = ariane_pkg::RVH ? 1 : 0;
-    localparam ASID_LEN      = (riscv::XLEN == 64) ? 16 : 9;
     localparam VPN_LEN       = (riscv::XLEN == 64) ? (HYP_EXT==1 ? 29 : 27) : 20;
     localparam PT_LEVELS     = (riscv::XLEN == 64) ? 3  : 2;
-    // localparam int unsigned mmu_ASID_WIDTH [HYP_EXT:0] = {VMID_WIDTH,ASID_WIDTH};
 
     if (MMU_PRESENT && ariane_pkg::RVH && (riscv::XLEN == 64)) begin : gen_mmu_sv39x4
         // cva6_mmu_sv39x4 #(
         cva6_mmu #(
             .INSTR_TLB_ENTRIES      ( ariane_pkg::INSTR_TLB_ENTRIES ),
             .DATA_TLB_ENTRIES       ( ariane_pkg::DATA_TLB_ENTRIES  ),
+            .SHARED_TLB_DEPTH (cva6_config_pkg::CVA6ConfigSharedTlbDepth),
+            .USE_SHARED_TLB   (cva6_config_pkg::CVA6ConfigUseSharedTlb),
             .ASID_WIDTH             ( {VMID_WIDTH,ASID_WIDTH}       ),
-            // .VMID_WIDTH             ( VMID_WIDTH             ),
             .ArianeCfg              ( ArianeCfg              ),
             .HYP_EXT                (HYP_EXT),
-            .ASID_LEN               (ASID_LEN),
             .VPN_LEN                (VPN_LEN),
             .PT_LEVELS              (PT_LEVELS)
         ) i_cva6_mmu (
@@ -219,19 +217,7 @@ module load_store_unit import ariane_pkg::*; #(
             .sum_i                  ({vs_sum_i,sum_i}),
             .mxr_i                  ({vmxr_i,mxr_i}),
             .hlvx_inst_i            ( mmu_hlvx_inst          ),
-            .hs_ld_st_inst_i        ( mmu_hs_ld_st_inst      ),
-
-            // icache address translation requests
-            
-            // .asid_to_be_flushed_i,
-            // .vmid_to_be_flushed_i,
-            // .vaddr_to_be_flushed_i,
-            // .gpaddr_to_be_flushed_i,
-            
-            
-            // Hypervisor load/store signals
-            
-            
+            .hs_ld_st_inst_i        ( mmu_hs_ld_st_inst      ),         
             
             .satp_ppn_i             ({hgatp_ppn_i,vsatp_ppn_i,satp_ppn_i}),
             .asid_i                 ({(ASID_WIDTH)'(vmid_i),vs_asid_i,asid_i}),
